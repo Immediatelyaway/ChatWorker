@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { Storage, memorySecrets, type SecretStore } from './storage.js';
 import { streamModel } from '../../../packages/providers/index.js';
 import type { Conversation, Message, StreamEvent } from '../../../packages/shared/types.js';
+import { BACKUP_LIMIT, exportBackup, importBackup, readBackup } from './backup.js';
 const now = () => new Date().toISOString();
 const envKeys: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
@@ -50,7 +51,31 @@ export async function startServer(
     );
     next();
   });
+  app.use('/api/backups', express.json({ limit: BACKUP_LIMIT }));
   app.use(express.json({ limit: '2mb' }));
+  app.get('/api/backups', (_req, res) => {
+    if (active.size) return res.status(409).json({ error: '请等待所有回复完成或停止生成后再备份' });
+    const backup = JSON.stringify(exportBackup(store.state), null, 2);
+    if (Buffer.byteLength(backup) > BACKUP_LIMIT)
+      return res.status(413).json({ error: '备份超过 20 MB，当前版本请直接保管本机数据目录' });
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('json').send(backup);
+  });
+  app.post('/api/backups/preview', (req, res) => {
+    const backup = readBackup(req.body);
+    res.json({
+      projects: backup.data.projects.length,
+      conversations: backup.data.conversations.length,
+      messages: backup.data.conversations.reduce((n, c) => n + c.messages.length, 0),
+      exportedAt: backup.exportedAt,
+    });
+  });
+  app.post('/api/backups/import', (req, res) => {
+    if (active.size) return res.status(409).json({ error: '请等待所有回复完成或停止生成后再导入' });
+    const next = importBackup(store.state, req.body);
+    store.replace(next);
+    res.json({ ok: true });
+  });
   app.get('/api/state', (_req, res) =>
     res.json({
       ...store.state,
@@ -327,10 +352,20 @@ export async function startServer(
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (res.headersSent) return;
     res
-      .status(err instanceof z.ZodError ? 400 : 500)
+      .status(
+        err instanceof z.ZodError || err.type === 'entity.parse.failed'
+          ? 400
+          : err.type === 'entity.too.large'
+            ? 413
+            : 500,
+      )
       .json({
         error:
-          err instanceof z.ZodError ? '输入格式不正确，请检查必填项和长度' : '服务暂时无法处理请求',
+          err.type === 'entity.too.large'
+            ? '文件或请求超过大小限制'
+            : err instanceof z.ZodError || err.type === 'entity.parse.failed'
+              ? '输入格式或数据版本不正确，请检查文件、必填项和长度'
+              : '服务暂时无法处理请求',
       });
   });
   const server: Server = await new Promise((resolve, reject) => {

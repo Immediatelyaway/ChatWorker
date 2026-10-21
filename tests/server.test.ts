@@ -103,3 +103,47 @@ test('local API: persistence, secrets, origin checks, cancellation and archive g
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('backup API validates previews and preserves data and credentials on import', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chatworker-backup-'));
+  const runtime = await startServer({ port: 0, dataDir: dir });
+  const call = (path: string, method = 'GET', body?: unknown) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api${path}`, {
+      method,
+      headers: { 'X-ChatWorker': '1', 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  try {
+    await call('/projects', 'POST', { name: '原始项目' });
+    await call('/providers/custom', 'PUT', {
+      baseUrl: 'https://example.com/v1',
+      models: ['test'],
+      protocol: 'openai',
+      apiKey: 'backup-secret-test',
+    });
+    const backup = await (await call('/backups')).json();
+    assert.ok(!JSON.stringify(backup).includes('backup-secret-test'));
+    assert.ok(!JSON.stringify(backup).includes('https://example.com'));
+    assert.equal((await call('/backups/preview', 'POST', backup)).status, 200);
+    assert.equal((await call('/backups/import', 'POST', { ...backup, version: 99 })).status, 400);
+    assert.equal(runtime.store.state.projects.length, 1);
+    assert.equal((await call('/backups/import', 'POST', backup)).status, 200);
+    assert.equal(runtime.store.state.projects.length, 2);
+    const state = await (await call('/state')).json();
+    assert.equal(state.providers.find((p: any) => p.id === 'custom').configured, true);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')).projects.length, 2);
+    const c = await (await call('/conversations', 'POST', {})).json();
+    const stream = await call(`/conversations/${c.id}/messages`, 'POST', {
+      providerId: 'demo',
+      model: '本地演示',
+      content: 'test',
+    });
+    assert.equal((await call('/backups/import', 'POST', backup)).status, 409);
+    assert.equal((await call('/backups')).status, 409);
+    await call(`/conversations/${c.id}/cancel`, 'POST');
+    await stream.text();
+  } finally {
+    await runtime.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

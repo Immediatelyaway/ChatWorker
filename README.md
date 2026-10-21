@@ -86,3 +86,7 @@ npm run format
 详细说明见 [完整设计文档](docs/design.md) 与 [验证记录](docs/verification.md)。
 
 数据：Web 默认写入运行目录 `.chatworker/state.json`；桌面版默认写入 Electron 的应用用户数据目录。两者默认独立，不自动同步。可通过 `CHATWORKER_DATA_DIR`（Web）或 `CHATWORKER_DESKTOP_DATA_DIR`（桌面）指定目录；不要让两个进程同时写同一目录。
+
+### 备份与迁移
+
+在「设置 → 数据与归档」导出 JSON 备份，或选择备份文件预览后导入（最大 20 MiB）。包含项目、消息、文本附件和活动，不包含 API Key 和模型配置。导入添加独立副本，不覆盖现有数据；重复导入会产生重复副本。Web 与 Electron 可以通过备份迁移会话。

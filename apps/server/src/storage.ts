@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { providerDefaults, type State } from '../../../packages/shared/types.js';
+import { type State } from '../../../packages/shared/types.js';
+import { decodeState, initialState } from './state-schema.js';
 export interface SecretStore {
   get(id: string): string;
   set(id: string, value: string): void;
@@ -22,20 +23,10 @@ export class Storage {
   constructor(dir: string) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.file = join(dir, 'state.json');
+    // Parse before writing: corrupt or future-version data must remain untouched.
     this.state = existsSync(this.file)
-      ? JSON.parse(readFileSync(this.file, 'utf8'))
-      : {
-          conversations: [],
-          projects: [],
-          providers: providerDefaults,
-          preferences: {
-            theme: 'light',
-            providerId: 'demo',
-            model: '本地演示',
-            systemPrompt:
-              '你是 ChatWorker，一位清晰、可靠的助手。优先使用用户的语言，明确区分事实、建议和未完成的操作。',
-          },
-        };
+      ? decodeState(JSON.parse(readFileSync(this.file, 'utf8')))
+      : initialState();
     for (const c of this.state.conversations)
       for (const m of c.messages)
         if (m.status === 'streaming') {
@@ -48,9 +39,17 @@ export class Storage {
         }
     this.save();
   }
+  replace(next: State) {
+    const validated = decodeState(next);
+    this.write(validated);
+    this.state = validated;
+  }
   save() {
+    this.write(this.state);
+  }
+  private write(state: State) {
     const tmp = this.file + '.tmp';
-    writeFileSync(tmp, JSON.stringify(this.state, null, 2), { mode: 0o600 });
+    writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
     renameSync(tmp, this.file);
   }
 }

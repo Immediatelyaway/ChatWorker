@@ -26,6 +26,7 @@ export const ui = reactive({
   runtime: { desktop: false, persistentKeys: false },
 });
 export const state = reactive<State>({
+  schemaVersion: 1,
   conversations: [],
   projects: [],
   providers: [],

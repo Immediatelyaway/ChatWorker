@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
 import Icon from './Icon.vue';
+import BackupPanel from './BackupPanel.vue';
 import {
   ui,
   state,
@@ -286,6 +287,7 @@ const titles: Record<string, string> = {
             <span class="badge">本机保存</span>
           </div>
         </div>
+        <BackupPanel />
         <h2 class="setting-section-title">已归档的会话</h2>
         <div class="settings-card">
           <p v-if="!state.conversations.some((c) => c.archived)" class="muted empty-archive">

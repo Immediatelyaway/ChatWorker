@@ -48,6 +48,7 @@ export interface Preferences {
   systemPrompt: string;
 }
 export interface State {
+  schemaVersion: number;
   conversations: Conversation[];
   projects: Project[];
   providers: Provider[];
