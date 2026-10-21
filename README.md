@@ -83,7 +83,7 @@ npm run build
 npm run format
 ```
 
-详细说明见 [完整设计文档](docs/design.md) 与 [验证记录](docs/verification.md)。
+当前已实现的行为见 [现有设计文档](docs/design.md) 与 [验证记录](docs/verification.md)。后续通用智能体的架构、源码依据、数据与接口契约、异常恢复、界面细节及分阶段验收见 [通用智能体整体设计蓝图](docs/agent-architecture-blueprint.md)；蓝图中的规划不代表现有能力。
 
 数据：Web 默认写入运行目录 `.chatworker/state.json`；桌面版默认写入 Electron 的应用用户数据目录。两者默认独立，不自动同步。可通过 `CHATWORKER_DATA_DIR`（Web）或 `CHATWORKER_DESKTOP_DATA_DIR`（桌面）指定目录；不要让两个进程同时写同一目录。
 
