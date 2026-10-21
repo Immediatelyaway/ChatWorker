@@ -71,3 +71,56 @@ test('UI reserves send before creating a conversation and snapshots the selected
     globalThis.fetch = originalFetch;
   }
 });
+
+test('send lifecycle keeps draft until server acceptance and does not clear on rejection', async () => {
+  const originalFetch = globalThis.fetch;
+  const at = new Date().toISOString();
+  const c: Conversation = {
+    id: 'draft-chat',
+    title: '新会话',
+    projectId: null,
+    mode: 'chat',
+    archived: false,
+    createdAt: at,
+    updatedAt: at,
+    messages: [],
+    activities: [],
+  };
+  const events: string[] = [];
+  state.conversations = [];
+  state.providers = [
+    {
+      id: 'demo',
+      name: '演示',
+      protocol: 'demo',
+      baseUrl: '',
+      models: ['model'],
+      configured: true,
+    },
+  ];
+  state.preferences.providerId = 'demo';
+  state.preferences.model = 'model';
+  ui.activeId = '';
+  ui.busyId = '';
+  ui.preparing = false;
+  let reject = true;
+  globalThis.fetch = async (input) => {
+    if (input === '/api/conversations') return Response.json(c);
+    if (input === '/api/state') return Response.json({ ...state, runtime: ui.runtime });
+    if (reject) return Response.json({ error: '测试发送失败' }, { status: 400 });
+    return new Response(`data: ${JSON.stringify({ type: 'done', conversation: c })}\n\n`);
+  };
+  const callbacks = {
+    created: (id: string) => events.push('created:' + id),
+    accepted: () => events.push('accepted'),
+  };
+  try {
+    assert.equal(await send('问题', [], false, callbacks), false);
+    assert.deepEqual(events, ['created:draft-chat']);
+    reject = false;
+    assert.equal(await send('问题', [], false, callbacks), true);
+    assert.deepEqual(events, ['created:draft-chat', 'accepted']);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

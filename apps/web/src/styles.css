@@ -2058,3 +2058,21 @@ kbd {
   font-size: 12px;
   margin-bottom: 12px;
 }
+.draft-status,
+.draft-warning {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.draft-status {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: var(--muted);
+  gap: 12px;
+}
+.draft-status .text-button {
+  font-size: 12px;
+}
+.draft-warning {
+  color: #b45309;
+}

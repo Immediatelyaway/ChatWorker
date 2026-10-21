@@ -2,25 +2,40 @@
 import { ref, computed } from 'vue';
 import Icon from './Icon.vue';
 import { ui, state, provider, send, cancel, preference, notify } from '../composables/workspace';
-import type { Attachment } from '../../../../packages/shared/types';
-const props = defineProps<{ suggestion?: string }>();
-const text = ref(''),
-  attachments = ref<Attachment[]>([]),
-  input = ref<HTMLInputElement>(),
+import { drafts, draftKey } from '../composables/drafts';
+const key = computed(() => draftKey(ui.activeId, ui.projectId, ui.mode));
+const draft = computed(() => drafts.get(key.value));
+const text = computed({
+  get: () => draft.value.text,
+  set: (value: string) => drafts.set(key.value, { ...draft.value, text: value }),
+});
+const attachments = computed(() => draft.value.attachments);
+const input = ref<HTMLInputElement>(),
   picker = ref(false);
 const available = computed(() => state.providers.filter((p) => p.configured));
 async function submit() {
   const content = text.value.trim();
   if (!content || ui.busyId || ui.preparing) return;
-  const old = text.value;
-  const files = [...attachments.value];
-  text.value = '';
-  attachments.value = [];
-  const ok = await send(content, files);
-  if (!ok && !text.value) {
-    text.value = old;
-    attachments.value = files;
-  }
+  const sourceKey = key.value;
+  let sendingKey = sourceKey;
+  const snapshot = drafts.snapshot(sendingKey);
+  await send(content, snapshot.attachments, false, {
+    created: (id) => {
+      const target = draftKey(id, '', '');
+      drafts.move(sendingKey, target);
+      sendingKey = target;
+    },
+    accepted: () => {
+      drafts.clearIfUnchanged(sendingKey, snapshot);
+      if (sourceKey !== sendingKey) drafts.clearIfUnchanged(sourceKey, snapshot);
+    },
+  });
+}
+function removeAttachment(index: number) {
+  drafts.set(key.value, {
+    ...draft.value,
+    attachments: attachments.value.filter((_, i) => i !== index),
+  });
 }
 function keydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -29,9 +44,10 @@ function keydown(e: KeyboardEvent) {
   }
 }
 async function files(e: Event) {
+  const targetKey = key.value;
   const list = Array.from((e.target as HTMLInputElement).files ?? []);
   for (const file of list) {
-    if (attachments.value.length >= 5) {
+    if (drafts.get(targetKey).attachments.length >= 5) {
       notify('最多添加 5 个文本附件');
       break;
     }
@@ -52,7 +68,19 @@ async function files(e: Event) {
       notify('不能读取二进制文件');
       continue;
     }
-    attachments.value.push({ name: file.name, content });
+    const target = drafts.get(targetKey);
+    if (target.attachments.length >= 5) {
+      notify('最多添加 5 个文本附件');
+      break;
+    }
+    if (file.name.length > 200) {
+      notify('附件名称不能超过 200 个字符');
+      continue;
+    }
+    drafts.set(targetKey, {
+      ...target,
+      attachments: [...target.attachments, { name: file.name, content }],
+    });
   }
   if (input.value) input.value.value = '';
 }
@@ -71,12 +99,13 @@ defineExpose({ fill });
       <div v-if="attachments.length" class="attachment-chips">
         <span v-for="(a, i) in attachments" :key="i" class="attachment-chip"
           ><Icon name="file" :size="14" />{{ a.name
-          }}<button aria-label="移除附件" @click="attachments.splice(i, 1)">
+          }}<button aria-label="移除附件" @click="removeAttachment(i)">
             <Icon name="x" :size="13" /></button
         ></span>
       </div>
       <textarea
         v-model="text"
+        :disabled="ui.preparing"
         aria-label="消息"
         :placeholder="ui.mode === 'work' ? '描述你的想法，让我们一起完成…' : '有什么想聊的？'"
         rows="3"
@@ -150,6 +179,15 @@ defineExpose({ fill });
           />
         </button>
       </div>
+    </div>
+    <div v-if="drafts.warnings[key]" class="draft-warning" role="alert">
+      {{ drafts.warnings[key] }}
+    </div>
+    <div v-else-if="text || attachments.length" class="draft-status" role="status">
+      <span>草稿已保存，可刷新恢复</span>
+      <button type="button" class="text-button" :disabled="ui.preparing" @click="drafts.clear(key)">
+        清空草稿
+      </button>
     </div>
     <div class="composer-bottom">
       <div>

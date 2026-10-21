@@ -7,6 +7,7 @@ import type {
   Provider,
   StreamEvent,
 } from '../../../../packages/shared/types';
+import { drafts, draftKey } from './drafts';
 import { parseSSE } from '../../../../packages/providers';
 export const ui = reactive({
   page: 'chat',
@@ -101,6 +102,7 @@ export async function deleteConversation(id: string) {
   try {
     await api('/conversations/' + id, 'DELETE');
     state.conversations = state.conversations.filter((c) => c.id !== id);
+    drafts.clear(draftKey(id, '', ''));
     if (ui.activeId === id) newChat();
     notify('会话已删除');
   } catch (e) {
@@ -118,7 +120,12 @@ export async function createProject(name: string) {
     notify((e as Error).message);
   }
 }
-export async function send(content: string, attachments: Attachment[], reuseLastUser = false) {
+export async function send(
+  content: string,
+  attachments: Attachment[],
+  reuseLastUser = false,
+  lifecycle: { created?: (id: string) => void; accepted?: () => void } = {},
+) {
   if (ui.busyId || ui.preparing) return false;
   ui.error = '';
   if (!provider.value?.configured) {
@@ -146,6 +153,7 @@ export async function send(content: string, attachments: Attachment[], reuseLast
         mode: ui.mode,
       });
       state.conversations.unshift(c);
+      lifecycle.created?.(c.id);
       ui.activeId = c.id;
     }
     ui.busyId = c.id;
@@ -164,6 +172,7 @@ export async function send(content: string, attachments: Attachment[], reuseLast
       const data = await response.json();
       throw new Error(data.error || '发送失败');
     }
+    lifecycle.accepted?.();
     ui.preparing = false;
     const local = state.conversations.find((x) => x.id === c!.id)!;
     if (!reuseLastUser)
