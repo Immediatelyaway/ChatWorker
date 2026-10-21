@@ -11,7 +11,7 @@ const text = ref(''),
 const available = computed(() => state.providers.filter((p) => p.configured));
 async function submit() {
   const content = text.value.trim();
-  if (!content || ui.busyId) return;
+  if (!content || ui.busyId || ui.preparing) return;
   const old = text.value;
   const files = [...attachments.value];
   text.value = '';
@@ -128,7 +128,7 @@ defineExpose({ fill });
           </div>
         </div>
         <button
-          v-if="ui.busyId"
+          v-if="ui.busyId && !ui.preparing"
           class="send-button stop"
           title="停止生成"
           aria-label="停止生成"
@@ -138,12 +138,16 @@ defineExpose({ fill });
         ><button
           v-else
           class="send-button"
-          :disabled="!text.trim() || !ui.ready"
+          :disabled="!text.trim() || !ui.ready || ui.preparing"
           title="发送消息"
           aria-label="发送消息"
           @click="submit"
         >
-          <Icon name="send" :size="20" />
+          <Icon
+            :name="ui.preparing ? 'loading' : 'send'"
+            :class="{ spin: ui.preparing }"
+            :size="20"
+          />
         </button>
       </div>
     </div>

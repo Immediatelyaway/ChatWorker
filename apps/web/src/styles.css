@@ -2035,3 +2035,26 @@ kbd {
   flex-shrink: 0;
   white-space: nowrap;
 }
+.message-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 12px;
+}
+.message-actions .copy-button {
+  margin-top: 0;
+}
+.message-actions .text-button {
+  font-size: 12px;
+  gap: 5px;
+}
+.pending-reply {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}

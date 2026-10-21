@@ -4,7 +4,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import Icon from './Icon.vue';
 import Composer from './Composer.vue';
-import { ui, current, notify } from '../composables/workspace';
+import { ui, current, notify, forkConversation, send } from '../composables/workspace';
 const composer = ref<InstanceType<typeof Composer>>(),
   scroller = ref<HTMLElement>();
 const suggestions = [
@@ -97,22 +97,51 @@ watch(
               </div>
               <span v-if="m.status === 'streaming' && m.content" class="typing-cursor"></span>
               <p v-if="m.status === 'cancelled' || m.status === 'failed'" class="message-status">
-                {{ m.status === 'cancelled' ? '已停止生成' : '本次生成未完成，可重新发送消息。' }}
+                {{
+                  m.status === 'cancelled'
+                    ? '已停止生成'
+                    : '本次生成未完成，可以在新分支中重新生成。'
+                }}
               </p>
-              <button
-                v-if="m.content && m.status !== 'streaming'"
-                class="icon-button copy-button"
-                title="复制回复"
-                aria-label="复制回复"
-                @click="copy(m.content)"
-              >
-                <Icon name="copy" :size="15" />
-              </button>
+              <div v-if="m.status !== 'streaming'" class="message-actions">
+                <button
+                  v-if="m.content"
+                  class="icon-button copy-button"
+                  title="复制回复"
+                  aria-label="复制回复"
+                  @click="copy(m.content)"
+                >
+                  <Icon name="copy" :size="15" />
+                </button>
+                <button
+                  class="text-button"
+                  :disabled="!!ui.busyId || ui.preparing"
+                  title="保留当前回复及之前的消息，在独立分支继续对话"
+                  @click="forkConversation(m.id, 'continue')"
+                >
+                  <Icon name="arrow" :size="15" />从此继续
+                </button>
+                <button
+                  class="text-button"
+                  :disabled="!!ui.busyId || ui.preparing"
+                  title="使用当前选定模型在新分支重新回答，真实模型可能产生 API 费用"
+                  @click="forkConversation(m.id, 'retry')"
+                >
+                  <Icon name="retry" :size="15" />重新生成（新分支）
+                </button>
+              </div>
             </div>
           </article>
         </div>
       </div>
       <div class="bottom-composer">
+        <div
+          v-if="current.messages.at(-1)?.role === 'user' && !ui.busyId && !ui.preparing"
+          class="pending-reply"
+        >
+          <span>这条问题尚无回复。</span>
+          <button class="text-button" @click="send('', [], true)">使用当前模型生成回复</button>
+        </div>
         <Composer />
         <p class="disclaimer">
           {{

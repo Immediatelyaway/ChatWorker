@@ -7,6 +7,7 @@ import { Storage, memorySecrets, type SecretStore } from './storage.js';
 import { streamModel } from '../../../packages/providers/index.js';
 import type { Conversation, Message, StreamEvent } from '../../../packages/shared/types.js';
 import { BACKUP_LIMIT, exportBackup, importBackup, readBackup } from './backup.js';
+import { branchConversation, BranchError } from './branches.js';
 const now = () => new Date().toISOString();
 const envKeys: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
@@ -151,6 +152,24 @@ export async function startServer(
     store.save();
     res.json(c);
   });
+  app.post('/api/conversations/:id/branch', (req, res) => {
+    const source = store.state.conversations.find((c) => c.id === req.params.id);
+    if (!source) return res.status(404).json({ error: '会话不存在' });
+    if (active.has(source.id)) return res.status(409).json({ error: '请先停止生成' });
+    const input = z
+      .object({ messageId: z.string().min(1), intent: z.enum(['continue', 'retry']) })
+      .strict()
+      .parse(req.body);
+    try {
+      const branch = branchConversation(source, input.messageId, input.intent);
+      store.state.conversations.unshift(branch);
+      store.save();
+      res.json(branch);
+    } catch (e) {
+      if (e instanceof BranchError) return res.status(400).json({ error: e.message });
+      throw e;
+    }
+  });
   app.patch('/api/conversations/:id', (req, res) => {
     const c = store.state.conversations.find((c) => c.id === req.params.id);
     if (!c) return res.sendStatus(404);
@@ -266,6 +285,10 @@ export async function startServer(
     if (!c) return res.sendStatus(404);
     if (c.archived) return res.status(400).json({ error: '请先恢复归档会话' });
     if (active.has(c.id)) return res.status(409).json({ error: '此会话正在生成' });
+    const reuseLastUser = req.body?.reuseLastUser === true;
+    const lastUser = c.messages.at(-1);
+    if (reuseLastUser && (!lastUser || lastUser.role !== 'user'))
+      return res.status(409).json({ error: '此会话没有待重新生成的问题，请创建新的重试分支' });
     const input = z
       .object({
         content: z.string().trim().min(1).max(30000),
@@ -273,12 +296,21 @@ export async function startServer(
         providerId: z.string(),
         model: z.string().min(1).max(150),
       })
-      .parse(req.body);
+      .parse(
+        reuseLastUser
+          ? {
+              providerId: req.body.providerId,
+              model: req.body.model,
+              content: lastUser!.content,
+              attachments: lastUser!.attachments ?? [],
+            }
+          : req.body,
+      );
     const provider = store.state.providers.find((p) => p.id === input.providerId);
     if (!provider) return res.status(400).json({ error: '模型服务不存在' });
     if (provider.protocol !== 'demo' && !key(provider.id))
       return res.status(400).json({ error: '请先在设置中填写 API Key' });
-    const history = c.messages
+    const history = (reuseLastUser ? c.messages.slice(0, -1) : c.messages)
       .filter((m) => m.status !== 'failed' && m.status !== 'cancelled' && m.content)
       .map((m) => ({
         role: m.role,
@@ -300,13 +332,14 @@ export async function startServer(
     const ctrl = new AbortController();
     active.set(c.id, ctrl);
     const timer = setTimeout(() => ctrl.abort(new Error('生成超过 3 分钟限制')), 180_000);
-    c.messages.push({
-      id: randomUUID(),
-      role: 'user',
-      content: input.content,
-      attachments: input.attachments,
-      createdAt: now(),
-    });
+    if (!reuseLastUser)
+      c.messages.push({
+        id: randomUUID(),
+        role: 'user',
+        content: input.content,
+        attachments: input.attachments,
+        createdAt: now(),
+      });
     if (c.title === '新会话') c.title = input.content.slice(0, 32);
     const answer: Message = {
       id: randomUUID(),

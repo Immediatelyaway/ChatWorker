@@ -22,6 +22,7 @@ export const ui = reactive({
   toast: '',
   error: '',
   busyId: '',
+  preparing: false,
   ready: false,
   runtime: { desktop: false, persistentKeys: false },
 });
@@ -117,8 +118,8 @@ export async function createProject(name: string) {
     notify((e as Error).message);
   }
 }
-export async function send(content: string, attachments: Attachment[]) {
-  if (ui.busyId) return false;
+export async function send(content: string, attachments: Attachment[], reuseLastUser = false) {
+  if (ui.busyId || ui.preparing) return false;
   ui.error = '';
   if (!provider.value?.configured) {
     ui.page = 'settings';
@@ -132,6 +133,12 @@ export async function send(content: string, attachments: Attachment[]) {
   }
   let c = current.value;
   let response: Response;
+  const selected = {
+    id: provider.value!.id,
+    name: provider.value!.name,
+    model: state.preferences.model,
+  };
+  ui.preparing = true;
   try {
     if (!c) {
       c = await api<Conversation>('/conversations', 'POST', {
@@ -148,29 +155,32 @@ export async function send(content: string, attachments: Attachment[]) {
       body: JSON.stringify({
         content,
         attachments,
-        providerId: state.preferences.providerId,
-        model: state.preferences.model,
+        providerId: selected.id,
+        model: selected.model,
+        reuseLastUser,
       }),
     });
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || '发送失败');
     }
+    ui.preparing = false;
     const local = state.conversations.find((x) => x.id === c!.id)!;
-    local.messages.push({
-      id: crypto.randomUUID(),
-      role: 'user',
-      content,
-      attachments,
-      createdAt: new Date().toISOString(),
-    });
+    if (!reuseLastUser)
+      local.messages.push({
+        id: crypto.randomUUID(),
+        role: 'user',
+        content,
+        attachments,
+        createdAt: new Date().toISOString(),
+      });
     local.messages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
       content: '',
       status: 'streaming',
       createdAt: new Date().toISOString(),
-      model: `${provider.value?.name} / ${state.preferences.model}`,
+      model: `${selected.name} / ${selected.model}`,
     });
     if (local.title === '新会话') local.title = content.slice(0, 32);
     const answer = local.messages.at(-1)!;
@@ -196,7 +206,35 @@ export async function send(content: string, attachments: Attachment[]) {
     await load();
     return false;
   } finally {
+    ui.preparing = false;
     ui.busyId = '';
+  }
+}
+export async function forkConversation(messageId: string, intent: 'continue' | 'retry') {
+  if (!current.value || ui.busyId || ui.preparing) return;
+  if (intent === 'retry' && (!provider.value?.configured || !state.preferences.model)) {
+    ui.page = 'settings';
+    ui.setting = 'providers';
+    notify('请先配置模型服务和模型 ID，再重新生成');
+    return;
+  }
+  const sourceId = current.value.id;
+  ui.preparing = true;
+  ui.error = '';
+  try {
+    const branch = await api<Conversation>(`/conversations/${sourceId}/branch`, 'POST', {
+      messageId,
+      intent,
+    });
+    state.conversations.unshift(branch);
+    openConversation(branch);
+    notify(intent === 'retry' ? '已创建重试分支，原回复保留' : '已创建分支，可以继续对话');
+    ui.preparing = false;
+    if (intent === 'retry') await send('', [], true);
+  } catch (e) {
+    ui.error = (e as Error).message;
+  } finally {
+    ui.preparing = false;
   }
 }
 export async function cancel() {
