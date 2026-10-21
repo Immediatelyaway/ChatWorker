@@ -147,3 +147,55 @@ test('backup API validates previews and preserves data and credentials on import
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('project management moves chats, rejects invalid destinations and preserves archived content on deletion', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chatworker-projects-'));
+  let runtime = await startServer({ port: 0, dataDir: dir });
+  const call = (path: string, method = 'GET', body?: unknown) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api${path}`, {
+      method,
+      headers: { 'X-ChatWorker': '1', 'Content-Type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  try {
+    const p = await (await call('/projects', 'POST', { name: '原项目' })).json();
+    const target = await (await call('/projects', 'POST', { name: '目标项目' })).json();
+    assert.equal((await call(`/projects/${p.id}`, 'PATCH', { name: '  ' })).status, 400);
+    assert.equal((await call('/projects/missing', 'PATCH', { name: '名称' })).status, 404);
+    await call(`/projects/${p.id}`, 'PATCH', { name: '新名称', description: '项目范围' });
+    const c = await (await call('/conversations', 'POST', { projectId: p.id })).json();
+    const response = await call(`/conversations/${c.id}/messages`, 'POST', {
+      providerId: 'demo',
+      model: '本地演示',
+      content: '保留消息',
+      attachments: [{ name: 'a.txt', content: '附件内容' }],
+    });
+    assert.equal((await call(`/projects/${p.id}`, 'DELETE')).status, 409);
+    assert.equal((await call(`/projects/${target.id}`, 'DELETE')).status, 409);
+    assert.equal(
+      (await call(`/conversations/${c.id}`, 'PATCH', { projectId: target.id })).status,
+      409,
+    );
+    await call(`/conversations/${c.id}/cancel`, 'POST');
+    await response.text();
+    assert.equal(
+      (await call(`/conversations/${c.id}`, 'PATCH', { projectId: 'missing' })).status,
+      400,
+    );
+    await call(`/conversations/${c.id}`, 'PATCH', { projectId: target.id, archived: true });
+    assert.equal(runtime.store.state.conversations[0].projectId, target.id);
+    await call(`/projects/${target.id}`, 'DELETE');
+    await runtime.close();
+    runtime = await startServer({ port: 0, dataDir: dir });
+    const persisted = await (await call('/state')).json();
+    assert.equal(persisted.projects[0].name, '新名称');
+    assert.equal(persisted.projects[0].description, '项目范围');
+    assert.equal(persisted.conversations[0].projectId, null);
+    assert.equal(persisted.conversations[0].archived, true);
+    assert.equal(persisted.conversations[0].messages[0].attachments[0].content, '附件内容');
+    assert.equal((await call(`/projects/${target.id}`, 'DELETE')).status, 404);
+  } finally {
+    await runtime.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

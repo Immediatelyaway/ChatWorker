@@ -98,6 +98,36 @@ export async function startServer(
     store.save();
     res.json(p);
   });
+  app.patch('/api/projects/:id', (req, res) => {
+    const project = store.state.projects.find((p) => p.id === req.params.id);
+    if (!project) return res.status(404).json({ error: '项目不存在' });
+    const patch = z
+      .object({
+        name: z.string().trim().min(1).max(60).optional(),
+        description: z.string().max(500).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    Object.assign(project, patch);
+    store.save();
+    res.json(project);
+  });
+  app.delete('/api/projects/:id', (req, res) => {
+    const project = store.state.projects.find((p) => p.id === req.params.id);
+    if (!project) return res.status(404).json({ error: '项目不存在' });
+    const conversations = store.state.conversations.filter((c) => c.projectId === project.id);
+    if (active.size)
+      return res.status(409).json({ error: '仍有回复正在生成，请先停止生成后再删除项目' });
+    const next = structuredClone(store.state);
+    next.projects = next.projects.filter((p) => p.id !== project.id);
+    for (const c of next.conversations)
+      if (c.projectId === project.id) {
+        c.projectId = null;
+        c.updatedAt = now();
+      }
+    store.replace(next);
+    res.json({ ok: true, detachedConversations: conversations.length });
+  });
   app.post('/api/conversations', (req, res) => {
     const input = z
       .object({
@@ -129,8 +159,15 @@ export async function startServer(
       .object({
         title: z.string().trim().min(1).max(100).optional(),
         archived: z.boolean().optional(),
+        projectId: z.string().nullable().optional(),
       })
       .parse(req.body);
+    if (
+      patch.projectId !== undefined &&
+      patch.projectId !== null &&
+      !store.state.projects.some((p) => p.id === patch.projectId)
+    )
+      return res.status(400).json({ error: '目标项目不存在' });
     Object.assign(c, patch, { updatedAt: now() });
     store.save();
     res.json(c);

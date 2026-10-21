@@ -89,6 +89,7 @@ export async function updateConversation(id: string, patch: Partial<Conversation
     const c = await api<Conversation>('/conversations/' + id, 'PATCH', patch);
     const index = state.conversations.findIndex((c) => c.id === id);
     state.conversations[index] = c;
+    if (id === ui.activeId) ui.projectId = c.projectId ?? '';
     if (c.archived && id === ui.activeId) newChat();
     notify(c.archived ? '会话已归档' : '已保存');
   } catch (e) {

@@ -27,6 +27,7 @@ const settings = [
   { id: 'providers', name: '模型服务', icon: 'key' },
   { id: 'general', name: '常规', icon: 'sliders' },
   { id: 'appearance', name: '外观', icon: 'sun' },
+  { id: 'projects', name: '项目管理', icon: 'folder' },
   { id: 'data', name: '数据与归档', icon: 'archive' },
   { id: 'about', name: '关于 ChatWorker', icon: 'idea' },
 ];
@@ -68,7 +69,17 @@ const settings = [
         <Icon name="search" />搜索会话<span class="shortcut">⌘ K</span>
       </button>
       <div class="section-heading">
-        <span>项目</span
+        <span>项目</span>
+        <button
+          class="icon-button small"
+          aria-label="管理项目"
+          title="管理项目"
+          @click="
+            ui.page = 'settings';
+            ui.setting = 'projects';
+          "
+        >
+          <Icon name="settings" :size="16" /></button
         ><button
           class="icon-button small"
           aria-label="创建项目"

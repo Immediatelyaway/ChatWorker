@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import Icon from './Icon.vue';
-import { current, ui, state, exportConversation } from '../composables/workspace';
+import {
+  current,
+  ui,
+  state,
+  exportConversation,
+  updateConversation,
+} from '../composables/workspace';
 const tab = ref('activity');
 const files = computed(() => current.value?.messages.flatMap((m) => m.attachments ?? []) ?? []);
 const project = computed(() => state.projects.find((p) => p.id === current.value?.projectId));
@@ -23,6 +29,22 @@ const project = computed(() => state.projects.find((p) => p.id === current.value
         >{{ current?.messages.length ?? 0 }} 条消息 ·
         {{ current?.mode === 'work' ? '工作模式' : '聊天模式' }}</span
       >
+      <label v-if="current" class="project-select-label"
+        >所属项目
+        <select
+          :value="current.projectId ?? ''"
+          :disabled="!!ui.busyId"
+          @change="
+            updateConversation(current.id, {
+              projectId: ($event.target as HTMLSelectElement).value || null,
+            })
+          "
+        >
+          <option value="">独立会话</option>
+          <option v-for="p in state.projects" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+      </label>
+      <p v-if="project?.description" class="fine-print">{{ project.description }}</p>
     </div>
     <div class="detail-tabs">
       <button :class="{ active: tab === 'activity' }" @click="tab = 'activity'">活动</button

@@ -1994,3 +1994,44 @@ kbd {
 .markdown {
   font-size: 14px;
 }
+
+.project-list {
+  margin-top: 24px;
+}
+.project-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.project-description {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.project-dialog label,
+.project-select-label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 18px;
+}
+.project-dialog textarea,
+.project-select-label select {
+  width: 100%;
+}
+.backup-preview {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .project-list .setting-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+.setting-row > .secondary-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

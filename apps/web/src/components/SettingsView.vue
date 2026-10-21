@@ -2,6 +2,7 @@
 import { ref, watch, computed } from 'vue';
 import Icon from './Icon.vue';
 import BackupPanel from './BackupPanel.vue';
+import ProjectManager from './ProjectManager.vue';
 import {
   ui,
   state,
@@ -86,6 +87,7 @@ const titles: Record<string, string> = {
   general: '常规',
   appearance: '外观',
   data: '数据与归档',
+  projects: '项目管理',
   about: '关于 ChatWorker',
 };
 </script>
@@ -276,6 +278,7 @@ const titles: Record<string, string> = {
             </p>
           </button></div
       ></template>
+      <ProjectManager v-if="ui.setting === 'projects'" />
       <template v-if="ui.setting === 'data'"
         ><p class="settings-description">让重要的对话留得下来，也能随时重新开始。</p>
         <div class="settings-card">
