@@ -156,7 +156,17 @@ const settings = [
       </div>
     </template>
     <div class="sidebar-footer">
-      <span class="status-dot"></span><span>本地工作空间</span><span class="version">v0.1</span>
+      <span class="status-dot"></span><span>本地工作空间</span>
+      <button
+        type="button"
+        class="version"
+        @click="
+          ui.page = 'settings';
+          ui.setting = 'about';
+        "
+      >
+        运行能力
+      </button>
     </div>
   </aside>
 </template>

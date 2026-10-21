@@ -3,6 +3,7 @@ import { ref, computed } from 'vue';
 import Icon from './Icon.vue';
 import { ui, state, provider, send, cancel, preference, notify } from '../composables/workspace';
 import { drafts, draftKey } from '../composables/drafts';
+import { CHAT_LIMITS } from '../../../../packages/contracts/limits';
 const key = computed(() => draftKey(ui.activeId, ui.projectId, ui.mode));
 const draft = computed(() => drafts.get(key.value));
 const text = computed({
@@ -47,12 +48,12 @@ async function files(e: Event) {
   const targetKey = key.value;
   const list = Array.from((e.target as HTMLInputElement).files ?? []);
   for (const file of list) {
-    if (drafts.get(targetKey).attachments.length >= 5) {
-      notify('最多添加 5 个文本附件');
+    if (drafts.get(targetKey).attachments.length >= CHAT_LIMITS.attachmentsPerMessage) {
+      notify(`最多添加 ${CHAT_LIMITS.attachmentsPerMessage} 个文本附件`);
       break;
     }
-    if (file.size > 100000) {
-      notify(`${file.name} 超过 100 KB`);
+    if (file.size > CHAT_LIMITS.attachmentFileBytes) {
+      notify(`${file.name} 超过 ${CHAT_LIMITS.attachmentFileBytes / 1000} KB`);
       continue;
     }
     if (
@@ -69,12 +70,12 @@ async function files(e: Event) {
       continue;
     }
     const target = drafts.get(targetKey);
-    if (target.attachments.length >= 5) {
-      notify('最多添加 5 个文本附件');
+    if (target.attachments.length >= CHAT_LIMITS.attachmentsPerMessage) {
+      notify(`最多添加 ${CHAT_LIMITS.attachmentsPerMessage} 个文本附件`);
       break;
     }
-    if (file.name.length > 200) {
-      notify('附件名称不能超过 200 个字符');
+    if (file.name.length > CHAT_LIMITS.attachmentNameCharacters) {
+      notify(`附件名称不能超过 ${CHAT_LIMITS.attachmentNameCharacters} 个字符`);
       continue;
     }
     drafts.set(targetKey, {
@@ -109,7 +110,7 @@ defineExpose({ fill });
         aria-label="消息"
         :placeholder="ui.mode === 'work' ? '描述你的想法，让我们一起完成…' : '有什么想聊的？'"
         rows="3"
-        maxlength="30000"
+        :maxlength="CHAT_LIMITS.inputCharacters"
         @keydown="keydown"
       ></textarea>
       <div class="composer-toolbar">

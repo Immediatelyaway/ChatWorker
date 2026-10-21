@@ -9,6 +9,7 @@ import type {
 } from '../../../../packages/shared/types';
 import { drafts, draftKey } from './drafts';
 import { parseSSE } from '../../../../packages/providers';
+import { STATE_VERSION } from '../../../../packages/contracts/versions';
 export const ui = reactive({
   page: 'chat',
   activeId: '',
@@ -28,7 +29,7 @@ export const ui = reactive({
   runtime: { desktop: false, persistentKeys: false },
 });
 export const state = reactive<State>({
-  schemaVersion: 1,
+  schemaVersion: STATE_VERSION,
   conversations: [],
   projects: [],
   providers: [],

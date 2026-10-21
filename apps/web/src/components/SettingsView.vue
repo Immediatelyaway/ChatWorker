@@ -3,6 +3,7 @@ import { ref, watch, computed } from 'vue';
 import Icon from './Icon.vue';
 import BackupPanel from './BackupPanel.vue';
 import ProjectManager from './ProjectManager.vue';
+import CapabilitiesPanel from './CapabilitiesPanel.vue';
 import {
   ui,
   state,
@@ -333,19 +334,8 @@ const titles: Record<string, string> = {
           ChatWorker 是一个以学习和日常协作为目标的个人 AI 工作空间。Web 与 Electron
           桌面版共享同一套 Vue 界面。
         </p>
-        <div class="settings-card">
-          <div class="setting-row"><strong>版本</strong><span>0.1.0 · MVP</span></div>
-          <div class="setting-row">
-            <strong>技术栈</strong><span>Vue 3 / TypeScript / Electron</span>
-          </div>
-          <div class="setting-row">
-            <strong>当前能力</strong><span>聊天、附件、项目与模型配置</span>
-          </div>
-        </div>
-        <p class="fine-print">
-          设计借鉴编程助手的会话与工作流思路。当前版本不含终端执行、文件编辑、MCP 和多 Agent 编排。
-        </p></template
-      >
+        <CapabilitiesPanel
+      /></template>
     </div>
   </section>
   <div v-if="deleteId" class="modal-overlay" @click.self="deleteId = ''">

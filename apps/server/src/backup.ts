@@ -2,12 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { State } from '../../../packages/shared/types.js';
 import { recordsSchema } from './state-schema.js';
+import { BACKUP_VERSION } from '../../../packages/contracts/versions.js';
+import { CHAT_LIMITS } from '../../../packages/contracts/limits.js';
 
-export const BACKUP_LIMIT = 20 * 1024 * 1024;
+export const BACKUP_LIMIT = CHAT_LIMITS.backupBytes;
 const backupSchema = z
   .object({
     format: z.literal('chatworker-backup'),
-    version: z.literal(1),
+    version: z.literal(BACKUP_VERSION),
     exportedAt: z.string().datetime(),
     data: recordsSchema,
   })
@@ -20,7 +22,7 @@ export function exportBackup(state: State) {
   // Explicit allowlist: credentials, endpoints and preferences never enter backups.
   return readBackup({
     format: 'chatworker-backup',
-    version: 1,
+    version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     data: recordsSchema.parse(state),
   });

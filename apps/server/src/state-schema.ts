@@ -1,17 +1,24 @@
 import { z } from 'zod';
 import { providerDefaults, type State } from '../../../packages/shared/types.js';
+import { STATE_VERSION } from '../../../packages/contracts/versions.js';
+import { CHAT_LIMITS } from '../../../packages/contracts/limits.js';
 
-export const STATE_VERSION = 1;
+export { STATE_VERSION } from '../../../packages/contracts/versions.js';
 const id = z.string().min(1).max(200);
 const date = z.string().datetime();
 const project = z.object({ id, name: z.string().min(1).max(60), description: z.string().max(500) });
 const message = z.object({
   id,
   role: z.enum(['user', 'assistant']),
-  content: z.string().max(200_000),
+  content: z.string().max(CHAT_LIMITS.responseCharacters),
   attachments: z
-    .array(z.object({ name: z.string().min(1).max(200), content: z.string().max(100_000) }))
-    .max(5)
+    .array(
+      z.object({
+        name: z.string().min(1).max(CHAT_LIMITS.attachmentNameCharacters),
+        content: z.string().max(CHAT_LIMITS.attachmentCharacters),
+      }),
+    )
+    .max(CHAT_LIMITS.attachmentsPerMessage)
     .optional(),
   createdAt: date,
   status: z.enum(['streaming', 'completed', 'cancelled', 'failed']).optional(),

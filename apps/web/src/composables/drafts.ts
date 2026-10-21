@@ -1,5 +1,7 @@
 import { reactive } from 'vue';
 import type { Attachment } from '../../../../packages/shared/types';
+import { DRAFT_VERSION } from '../../../../packages/contracts/versions';
+import { CHAT_LIMITS } from '../../../../packages/contracts/limits';
 
 export interface Draft {
   text: string;
@@ -10,7 +12,7 @@ interface DraftStorage {
   setItem(key: string, value: string): void;
   removeItem(key: string): void;
 }
-const prefix = 'chatworker:draft:v1:';
+const prefix = `chatworker:draft:v${DRAFT_VERSION}:`;
 const blank = (): Draft => ({ text: '', attachments: [] });
 const copy = (draft: Draft): Draft => ({
   text: draft.text,
@@ -22,19 +24,19 @@ export function draftKey(conversationId: string, projectId: string, mode: string
 function parse(raw: string): Draft {
   const value = JSON.parse(raw);
   if (
-    value.version !== 1 ||
+    value.version !== DRAFT_VERSION ||
     typeof value.text !== 'string' ||
-    value.text.length > 30000 ||
+    value.text.length > CHAT_LIMITS.inputCharacters ||
     !Array.isArray(value.attachments) ||
-    value.attachments.length > 5 ||
+    value.attachments.length > CHAT_LIMITS.attachmentsPerMessage ||
     value.attachments.some(
       (a: Attachment) =>
         !a ||
         typeof a.name !== 'string' ||
         !a.name ||
-        a.name.length > 200 ||
+        a.name.length > CHAT_LIMITS.attachmentNameCharacters ||
         typeof a.content !== 'string' ||
-        a.content.length > 100000,
+        a.content.length > CHAT_LIMITS.attachmentCharacters,
     )
   )
     throw new Error('Invalid draft');
@@ -69,7 +71,7 @@ export class DraftStore {
     try {
       if (!this.storage) throw new Error('Storage unavailable');
       if (!draft.text && !draft.attachments.length) this.storage.removeItem(prefix + key);
-      else this.storage.setItem(prefix + key, JSON.stringify({ version: 1, ...draft }));
+      else this.storage.setItem(prefix + key, JSON.stringify({ version: DRAFT_VERSION, ...draft }));
       delete this.warnings[key];
     } catch {
       this.warnings[key] =

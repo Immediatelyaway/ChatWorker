@@ -8,6 +8,8 @@ import { streamModel } from '../../../packages/providers/index.js';
 import type { Conversation, Message, StreamEvent } from '../../../packages/shared/types.js';
 import { BACKUP_LIMIT, exportBackup, importBackup, readBackup } from './backup.js';
 import { branchConversation, BranchError } from './branches.js';
+import { describeCapabilities } from './capabilities.js';
+import { CHAT_LIMITS } from '../../../packages/contracts/limits.js';
 const now = () => new Date().toISOString();
 const envKeys: Record<string, string> = {
   openai: 'OPENAI_API_KEY',
@@ -15,7 +17,10 @@ const envKeys: Record<string, string> = {
   gemini: 'GEMINI_API_KEY',
   deepseek: 'DEEPSEEK_API_KEY',
 };
-const attachment = z.object({ name: z.string().min(1).max(200), content: z.string().max(100_000) });
+const attachment = z.object({
+  name: z.string().min(1).max(CHAT_LIMITS.attachmentNameCharacters),
+  content: z.string().max(CHAT_LIMITS.attachmentCharacters),
+});
 export async function startServer(
   options: {
     port?: number;
@@ -54,6 +59,12 @@ export async function startServer(
   });
   app.use('/api/backups', express.json({ limit: BACKUP_LIMIT }));
   app.use(express.json({ limit: '2mb' }));
+  app.get('/api/v1/capabilities', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(
+      describeCapabilities({ desktop: !!options.desktop, persistentKeys: secrets.persistent }),
+    );
+  });
   app.get('/api/backups', (_req, res) => {
     if (active.size) return res.status(409).json({ error: '请等待所有回复完成或停止生成后再备份' });
     const backup = JSON.stringify(exportBackup(store.state), null, 2);
@@ -291,8 +302,8 @@ export async function startServer(
       return res.status(409).json({ error: '此会话没有待重新生成的问题，请创建新的重试分支' });
     const input = z
       .object({
-        content: z.string().trim().min(1).max(30000),
-        attachments: z.array(attachment).max(5).default([]),
+        content: z.string().trim().min(1).max(CHAT_LIMITS.inputCharacters),
+        attachments: z.array(attachment).max(CHAT_LIMITS.attachmentsPerMessage).default([]),
         providerId: z.string(),
         model: z.string().min(1).max(150),
       })
@@ -327,11 +338,15 @@ export async function startServer(
       input.attachments
         .map((a) => `\n\n<attachment name=${JSON.stringify(a.name)}>\n${a.content}\n</attachment>`)
         .join('');
-    if (history.reduce((n, m) => n + m.content.length, 0) + userContent.length > 240_000)
+    if (
+      history.reduce((n, m) => n + m.content.length, 0) + userContent.length >
+      CHAT_LIMITS.contextCharacters
+    )
       return res.status(400).json({ error: '会话上下文过长，请新建会话或减少附件' });
     const ctrl = new AbortController();
     active.set(c.id, ctrl);
-    const timer = setTimeout(() => ctrl.abort(new Error('生成超过 3 分钟限制')), 180_000);
+    const timeoutReason = new Error('生成超时');
+    const timer = setTimeout(() => ctrl.abort(timeoutReason), CHAT_LIMITS.generationMilliseconds);
     if (!reuseLastUser)
       c.messages.push({
         id: randomUUID(),
@@ -387,15 +402,15 @@ export async function startServer(
         signal: ctrl.signal,
       })) {
         ctrl.signal.throwIfAborted();
-        if (answer.content.length + delta.length > 200_000) throw new Error('回复达到大小限制');
+        if (answer.content.length + delta.length > CHAT_LIMITS.responseCharacters)
+          throw new Error('回复达到大小限制');
         answer.content += delta;
         emit({ type: 'delta', text: delta });
       }
       answer.status = 'completed';
       activity('回复完成');
     } catch (e) {
-      const timedOut =
-        ctrl.signal.reason instanceof Error && ctrl.signal.reason.message.includes('3 分钟');
+      const timedOut = ctrl.signal.reason === timeoutReason;
       answer.status = ctrl.signal.aborted && !timedOut ? 'cancelled' : 'failed';
       const message = timedOut
         ? '生成超时'

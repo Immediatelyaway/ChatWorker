@@ -61,6 +61,7 @@ Web 模式的 Key 仅存服务端内存，重启后需重填；也可使用 `OPE
 - 会话 Markdown 导出、回复复制、实际活动记录。
 - 模型服务设置、连接测试、系统指令及浅色/深色/系统主题。
 - Web 与 Electron 共用前端、本地服务和模型适配层。
+- 「关于 ChatWorker → 运行能力」显示服务版本、已支持的功能、保存方式与实际使用限制，可刷新查询。
 
 工作模式当前是规划和文本协作，不执行终端命令，不读取未选择的本地文件，不自动修改项目代码。MCP、Agent 工具循环及多 Agent 属于后续阶段。
 
@@ -70,6 +71,7 @@ Web 模式的 Key 仅存服务端内存，重启后需重填；也可使用 `OPE
 apps/web/          Vue 页面、组件、状态与样式
 apps/server/       本地 API、会话保存、请求校验、流式编排
 apps/desktop/      Electron 生命周期与加密凭据
+packages/contracts/能力接口校验、独立格式版本与共用限制
 packages/shared/   跨端数据类型和供应商配置
 packages/providers/三类模型协议与 SSE 解析
 tests/            协议、异常、取消、持久化等测试
