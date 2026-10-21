@@ -1,0 +1,75 @@
+{
+  "name": "chatworker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A local-first Vue and Electron AI workspace",
+  "main": "apps/desktop/main.mjs",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"tsx watch apps/server/src/cli.ts\" \"vite --config apps/web/vite.config.ts\"",
+    "build": "vue-tsc --noEmit && vite build --config apps/web/vite.config.ts && tsc -p tsconfig.server.json",
+    "start": "node dist/apps/server/src/cli.js",
+    "desktop": "npm run build && electron .",
+    "desktop:pack": "npm run build && node scripts/package-desktop.mjs",
+    "test": "tsx --test tests/*.test.ts",
+    "typecheck": "vue-tsc --noEmit",
+    "format": "prettier --write apps packages tests docs README.md"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.7",
+    "express": "^5.1.0",
+    "lucide-vue-next": "^0.468.0",
+    "marked": "^15.0.12",
+    "vue": "^3.5.22",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "prettier": "^3.9.10",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.7",
+    "vue-tsc": "^3.0.8"
+  },
+  "build": {
+    "appId": "com.chatworker.desktop",
+    "productName": "ChatWorker",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "apps/desktop/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ]
+    },
+    "afterPack": "scripts/after-pack.cjs"
+  },
+  "overrides": {
+    "app-builder-lib": {
+      "@electron/get": "^5.1.0"
+    }
+  },
+  "author": "ChatWorker contributors",
+  "license": "UNLICENSED"
+}

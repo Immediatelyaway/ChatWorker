@@ -1,0 +1,88 @@
+# ChatWorker
+
+一个 Vue 3 + Electron 的个人 AI 工作空间。Web 与桌面共用界面，支持主流模型 API、流式聊天、项目分组和本地会话记录。
+
+## 快速启动
+
+环境：Node.js 22.12+、npm。首次运行需要下载依赖；真实模型请求需要自己的 API Key。
+
+```bash
+npm ci
+npm run dev
+```
+
+浏览器打开 http://127.0.0.1:5173 。没有 Key 也可使用明确标注的本地演示模式。
+
+生产构建与本地运行：
+
+```bash
+npm run build
+npm start
+```
+
+打开 http://127.0.0.1:4317 。只监听本机地址，不是公网部署方案。
+
+桌面版：
+
+```bash
+npm run desktop
+```
+
+生成当前平台的应用产物：
+
+```bash
+npm run desktop:pack
+```
+
+产物位于 `release/`；macOS 生成 `ChatWorker-mac-arm64.zip`（Intel 为 x64），解压后得到应用。打包脚本先在临时目录签名，避免同步目录的 Finder 元数据干扰。macOS、Windows、Linux 的安装包目标已配置；本次验证平台为 macOS Apple Silicon，Windows/Linux 需要在对应平台验证。正式分发前还需平台签名与发布流程。
+
+## 配置模型
+
+打开「设置 → 模型服务」，选择供应商，填写 Base URL、API Key、模型 ID，再点「保存并使用」。多个模型 ID 用英文逗号分隔。可以选择：
+
+- OpenAI：Responses 协议。
+- Anthropic：原生 Messages 协议。
+- Google Gemini：OpenAI 兼容协议。
+- DeepSeek：OpenAI 兼容协议。
+- 自定义服务：支持上述三种协议，可连接本机 HTTP 接口。
+
+接口适配已实现并通过模拟流测试。真实账户权限、余额和模型是否可用需使用自己的 Key 进行测试；测试按钮会产生一条简短 API 请求。
+
+Web 模式的 Key 仅存服务端内存，重启后需重填；也可使用 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY`、`DEEPSEEK_API_KEY` 环境变量。`.env` 不自动加载；可在构建后使用 `node --env-file=.env dist/apps/server/src/cli.js`。不要提交 `.env`。
+
+桌面版在系统加密可用时，通过 Electron `safeStorage` 加密保存 Key；不可用时退回内存模式，设置页显示实际存储方式。
+
+## 已实现
+
+- 聊天与工作两种提示模式，Markdown 和代码块展示。
+- 流式响应、停止生成、错误提示与部分结果保存。
+- 项目创建、会话搜索、重命名、归档、恢复和删除。
+- 文本/代码附件，每个最多 100 KB，每条最多 5 个。
+- 会话 Markdown 导出、回复复制、实际活动记录。
+- 模型服务设置、连接测试、系统指令及浅色/深色/系统主题。
+- Web 与 Electron 共用前端、本地服务和模型适配层。
+
+工作模式当前是规划和文本协作，不执行终端命令，不读取未选择的本地文件，不自动修改项目代码。MCP、Agent 工具循环及多 Agent 属于后续阶段。
+
+## 项目结构
+
+```text
+apps/web/          Vue 页面、组件、状态与样式
+apps/server/       本地 API、会话保存、请求校验、流式编排
+apps/desktop/      Electron 生命周期与加密凭据
+packages/shared/   跨端数据类型和供应商配置
+packages/providers/三类模型协议与 SSE 解析
+tests/            协议、异常、取消、持久化等测试
+docs/             设计、验证与后续计划
+```
+
+```bash
+npm run typecheck
+npm test
+npm run build
+npm run format
+```
+
+详细说明见 [完整设计文档](docs/design.md) 与 [验证记录](docs/verification.md)。
+
+数据：Web 默认写入运行目录 `.chatworker/state.json`；桌面版默认写入 Electron 的应用用户数据目录。两者默认独立，不自动同步。可通过 `CHATWORKER_DATA_DIR`（Web）或 `CHATWORKER_DESKTOP_DATA_DIR`（桌面）指定目录；不要让两个进程同时写同一目录。

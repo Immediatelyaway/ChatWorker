@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+.chatworker/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.chatworker-desktop/

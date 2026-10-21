@@ -1,0 +1,105 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { startServer } from '../apps/server/src/index.js';
+import { parseSSE } from '../packages/providers/index.js';
+
+test('local API: persistence, secrets, origin checks, cancellation and archive guards', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'chatworker-test-'));
+  let runtime = await startServer({ port: 0, dataDir: dir });
+  const call = (
+    path: string,
+    method = 'GET',
+    body?: unknown,
+    headers: Record<string, string> = {},
+  ) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api${path}`, {
+      method,
+      headers: { 'X-ChatWorker': '1', 'Content-Type': 'application/json', ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  try {
+    assert.equal(
+      (await call('/state', 'GET', undefined, { Origin: 'https://evil.example' })).status,
+      403,
+    );
+    assert.equal((await fetch(`http://127.0.0.1:${runtime.port}/api/state`)).status, 403);
+    assert.equal(
+      (
+        await call('/providers/custom', 'PUT', {
+          baseUrl: 'http://example.com',
+          models: ['x'],
+          protocol: 'openai',
+        })
+      ).status,
+      400,
+    );
+    assert.equal(
+      (
+        await call('/providers/custom', 'PUT', {
+          baseUrl: 'https://example.com/v1',
+          models: ['x'],
+          protocol: 'openai',
+          apiKey: 'secret-test-value',
+        })
+      ).status,
+      200,
+    );
+    const publicState = await (await call('/state')).text();
+    assert.ok(!publicState.includes('secret-test-value'));
+    assert.ok(!readFileSync(join(dir, 'state.json'), 'utf8').includes('secret-test-value'));
+    assert.equal(
+      (
+        await call('/providers/custom', 'PUT', {
+          baseUrl: 'https://other.example/v1',
+          models: ['x'],
+          protocol: 'openai',
+        })
+      ).status,
+      400,
+    );
+    const p = await (await call('/projects', 'POST', { name: 'Project' })).json();
+    const c = await (
+      await call('/conversations', 'POST', { mode: 'work', projectId: p.id })
+    ).json();
+    const response = await call(`/conversations/${c.id}/messages`, 'POST', {
+      providerId: 'demo',
+      model: '本地演示',
+      content: 'hello',
+    });
+    assert.equal(response.status, 200);
+    let cancelled = false,
+      finished: any;
+    for await (const raw of parseSSE(response.body!)) {
+      const event = JSON.parse(raw);
+      if (event.type === 'delta' && !cancelled) {
+        cancelled = true;
+        await call(`/conversations/${c.id}/cancel`, 'POST');
+      }
+      if (event.type === 'done') finished = event.conversation;
+    }
+    assert.equal(finished.messages.at(-1).status, 'cancelled');
+    assert.ok(finished.messages.at(-1).content.length > 0);
+    await call(`/conversations/${c.id}`, 'PATCH', { archived: true });
+    assert.equal(
+      (
+        await call(`/conversations/${c.id}/messages`, 'POST', {
+          providerId: 'demo',
+          model: '本地演示',
+          content: 'again',
+        })
+      ).status,
+      400,
+    );
+    await runtime.close();
+    runtime = await startServer({ port: 0, dataDir: dir });
+    const persisted = await (await call('/state')).json();
+    assert.equal(persisted.conversations[0].archived, true);
+    assert.equal(persisted.providers.find((p: any) => p.id === 'custom').configured, false);
+  } finally {
+    await runtime.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
