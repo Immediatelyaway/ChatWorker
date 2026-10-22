@@ -24,7 +24,7 @@ export function chunks(text: string) {
   while (offset < text.length) {
     let end = Math.min(offset + 1400, text.length);
     if (end < text.length) {
-      const newline = text.lastIndexOf('\n', end);
+      const newline = text.lastIndexOf('\n', end - 1);
       if (newline > offset + 700) end = newline + 1;
     }
     const excerpt = text.slice(offset, end),

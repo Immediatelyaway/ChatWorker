@@ -69,6 +69,10 @@ test('local retrieval ranks Chinese and English, retains exact excerpts, bounds 
     parts = chunks(text);
   assert.equal(parts.map((p) => p.text).join(''), text);
   assert.ok(parts.every((p) => p.text.length <= 1400));
+  const boundaryText = 'x'.repeat(1400) + '\n' + '下一段'.repeat(600);
+  const boundaryParts = chunks(boundaryText);
+  assert.ok(boundaryParts.every((p) => p.text.length <= 1400));
+  assert.equal(boundaryParts.map((p) => p.text).join(''), boundaryText);
   const rows = parts.map((p, i) => ({
     ...p,
     documentId: '00000000-0000-4000-8000-000000000001',
