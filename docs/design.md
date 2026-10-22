@@ -1,6 +1,6 @@
 # ChatWorker 完整设计文档
 
-文档版本：0.7，存储边界与驱动验证（应用版本独立读取 package.json）
+文档版本：0.8，SQLite 存储与迁移恢复（应用版本独立读取 package.json）
 
 更新：2026 年 10 月 22 日
 
@@ -26,7 +26,7 @@ ChatWorker 是一个个人 AI 工作空间。当前版本优先提供可运行�
 | 会话管理                | 已实现创建、搜索、重命名、归档、恢复、删除、分支和重新生成 |
 | 附件                    | 已实现文本和代码文件读取、上下文注入、详情预览             |
 | Markdown                | 已实现安全净化后的渲染、代码块、表格、回复复制             |
-| 数据保存                | 已实现单进程 JSON 原子替换写入                             |
+| 数据保存                | 已实现 SQLite 事务、独立存储线程、目录锁与旧 JSON 迁移     |
 | 导出                    | 已实现会话正文 Markdown 导出；原始附件不作为独立文件导出   |
 | 活动记录                | 已实现请求开始、附件加入、完成、停止、失败                 |
 | 外观设置                | 已实现浅色、深色、跟随系统                                 |
@@ -65,7 +65,9 @@ flowchart TB
   Vue -->|同源 HTTP 与 SSE| API[本地 Express 服务]
   API --> Validation[Zod 参数校验]
   Validation --> Conversations[会话与活动编排]
-  Conversations --> Storage[本地状态文件]
+  Conversations --> Storage[串行变更队列]
+  Storage --> Worker[独立存储线程]
+  Worker --> SQLite[本地 SQLite 数据库]
   Conversations --> Providers[模型协议适配层]
   Providers --> OpenAI[OpenAI Responses]
   Providers --> Compatible[Chat Completions 兼容服务]
@@ -83,7 +85,8 @@ flowchart TB
 | apps/web/src/components               | 侧栏、聊天、输入、设置、详情等独立组件       | 不直接实现供应商鉴权      |
 | apps/web/src/composables/workspace.ts | 共享状态、API 操作、前端流处理               | 不保存密钥到 localStorage |
 | apps/server/src/index.ts              | API、校验、请求生命周期、同源约束            | 不提供公网多租户授权      |
-| apps/server/src/storage.ts            | 状态初始化、原子写入、凭据接口               | 不承担复杂并发数据库能力  |
+| apps/server/src/storage.ts            | 内存快照、串行变更、提交后发布与中断恢复     | 不直接执行 SQL            |
+| packages/storage                      | 存储线程、关系表、事务、目录锁、迁移与恢复   | 不编排模型请求或操作 UI   |
 | apps/desktop/main.mjs                 | 应用生命周期、窗口、服务、系统加密           | 不把 Node 能力暴露给网页  |
 | packages/shared/types.ts              | 消息、会话、项目、事件、配置类型             | 不依赖 Vue 或 Electron    |
 | packages/providers/index.ts           | 三种请求协议、SSE 解码、错误识别、演示流     | 不直接修改 UI 或保存会话  |
@@ -123,9 +126,9 @@ Responses 使用 Bearer 凭据、instructions 和 input，识别 response.output
 
 停止操作通过专门的 cancel 接口触发服务端 AbortController，向上游传递取消信号。上游对取消的具体计费行为由供应商决定。单次请求最长三分钟，助手输出最多约二十万字符，同一会话同一时刻只能运行一个请求。
 
-当前 Web 界面只允许一个活动请求。服务端支持不同会话分别运行，但没有多用户调度与跨进程锁。网络断开时取消请求，刷新后从保存的会话读取状态；没有自动 SSE 重放或断线后后台继续生成能力。
+当前 Web 界面只允许一个活动请求。服务端支持不同会话分别运行；资料目录只允许一个新版服务持有写入权，没有多用户调度。网络断开时取消请求，刷新后从保存的会话读取状态；没有自动 SSE 重放或断线后后台继续生成能力。
 
-重启时将残留 streaming 标记为 failed 并加入中断记录。增量正文仅在请求结束时落盘，因此服务异常退出可能丢失当次尚未保存的回复；用户请求和初始 streaming 记录在开始时已保存。后续可通过 SQLite 与周期检查点改善。
+重启时将残留 streaming 标记为 failed 并加入中断记录。增量正文仅在请求结束时落盘，因此服务异常退出可能丢失当次尚未保存的回复；用户请求和初始 streaming 记录在开始时已保存。SQLite 已接入，周期检查点和流重放仍待后续实现。最终保存成功才发出 done；失败时保留上一次已提交状态并提示回复未能保存。
 
 ## 6 数据结构与存储
 
@@ -139,11 +142,13 @@ Responses 使用 Bearer 凭据、instructions 和 input，识别 response.output
 | Provider     | id、name、protocol、baseUrl、models；返回时计算 configured                       |
 | Preferences  | theme、providerId、model、systemPrompt                                           |
 
-Web 数据默认位于工作目录 .chatworker/state.json。桌面数据默认位于 Electron app.getPath('userData')，可由专用环境变量覆盖。两端使用相同数据格式，但默认是独立存储，不是云同步。
+Web 数据默认位于工作目录 `.chatworker/state.sqlite`。桌面数据默认位于 Electron `app.getPath('userData')`，可由专用环境变量覆盖。两端使用相同数据库格式，但默认是独立存储，不是云同步。
 
-状态文件新增 schemaVersion=1。启动时完整校验数据结构、记录 ID 和项目引用；无版本号的旧数据自动迁移到版本 1，损坏文件与未知版本拒绝加载且不覆盖原文件。
+数据库版本为 1，状态格式与 JSON 备份仍为 1，能力契约升级为 2。数据库持有跨重启稳定的 `storeId`，启动检查版本、目录标识、完整性和业务结构。旧 JSON（含无版本数据）通过显式离线入口或桌面升级提示迁移；先备份并核验 SHA-256，再事务导入、完整比对、持久化并切换。保留旧文件，损坏与未来版本拒绝加载，不隐式初始化空库。
 
-状态通过写临时文件后 rename 替换，避免写到一半破坏旧文件；保存文件权限设置为仅当前用户可读写。此实现适合小规模单机原型。每次保存全量数据，历史增大时应迁移 SQLite，并引入分页和数据版本迁移。禁止多个服务进程共用同一数据目录。
+持久化在独立线程使用 SQLite 关系表和事务，主服务串行处理状态变更，提交成功后才发布新内存快照。跨进程目录锁拒绝重复打开，进程退出由系统释放。当前仍逐次重写全部关系记录，查询也加载全量状态，属于小规模单机过渡实现；分页、增量仓储和 revision 尚未实现。新建目录与文件使用私有权限，不能据此声称 Windows ACL 已验收。
+
+迁移备份是升级时的快照，不是持续备份；启用 SQLite 后不再写旧 JSON，也不自动回退它。迁移状态、故障恢复和人工恢复步骤见 [ADR-0002](adr/0002-sqlite-migration.md)。旧版程序不认识新版目录锁，升级前必须停止，升级后不能再共用此目录。
 
 会话正文和附件是本机明文数据，普通状态文件没有加密。这里的加密承诺只针对桌面端 API Key，不扩展为整库加密。
 
@@ -173,6 +178,8 @@ Web 默认凭据只保存在服务内存中，可从环境变量读取。桌面�
 
 更换 Base URL 时如果已有凭据，必须重新输入 Key，防止旧 Key 静默跟随到新服务器。接口要求 HTTPS，本机 localhost 和 127.0.0.1 可使用 HTTP；禁止 URL 内嵌用户名、密码、查询参数或片段，不跟随模型服务重定向。
 
+模型配置保存期间拒绝该供应商的新请求与并发编辑。显式更新 Key 时先清除旧 Key，再提交配置，最后保存新 Key；凭据文件与数据库没有跨介质事务，失败时可能需要重新填写 Key。环境变量 Key 仅用于对应预设默认地址，不自动跟随自定义地址。
+
 本地服务限制 Host 和 Origin，API 要求自定义头且不开放 CORS。这是针对恶意网页跨站请求的边界，不是防御本机恶意进程的身份认证；当前版本不能直接绑定公网用于多人服务。
 
 Electron 设置 nodeIntegration=false、contextIsolation=true、sandbox=true，阻止新窗口与跨源导航，默认拒绝网页权限请求。前端 Markdown 经过 DOMPurify 净化，生产页面提供 CSP，不加载第三方远程脚本。[Electron 安全建议](https://www.electronjs.org/docs/latest/tutorial/security)
@@ -201,7 +208,7 @@ Claude Code 的官方工作机制提供上下文、动作、验证循环的学�
 
 下一阶段按以下顺序扩展：
 
-1. JSON 状态版本号和旧版迁移已实现；后续将历史存储迁到 SQLite，增加消息分页。
+1. SQLite 和旧 JSON 迁移已实现；接下来实现稳定草稿与 revision，随后加入增量仓储和消息分页。
 2. 增加请求 ID、持久运行记录、事件序号和检查点，处理多窗口同步。
 3. 为项目添加用户授权的本地文件夹；先实现只读文件与搜索工具。
 4. 新增 Agent 循环与工具注册表，让工具参数、结果、审批和失败可观察。
@@ -274,8 +281,20 @@ Claude Code 的官方工作机制提供上下文、动作、验证循环的学�
 
 ## 17 存储边界与驱动验证（CW-002）
 
+本节记录 CW-002 阶段，生产存储的后续变化见第 18 节。
+
 存储文件读写抽取到 `packages/storage`，`Storage` 通过 `SnapshotRepository<State>` 访问持久化内容，继续负责 schema 校验和旧 streaming 消息的中断恢复。默认 `JsonSnapshotRepository` 保持原 `state.json` 路径、格式和临时文件替换方式。此接口是旧全状态实现的过渡边界，未来关系仓储另按业务事务设计。
 
 独立的 SQLite 连接入口选择内置 `node:sqlite`，默认 DELETE 日志、FULL 同步和外键校验。WAL 仅允许包含已知 WAL-reset 修复的引擎版本，并验证连接实际设置。生产应用不导入该试验入口，能力接口继续报告 JSON，用户数据尚未迁移。
 
 新增统一试验，验证 Node、Electron 主进程和打包测试应用中的参数绑定、提交、回滚、外键、写入锁及重开持久化。运行版本、限制、决策依据与 CW-003 迁移验收条件见 [ADR-0001](adr/0001-storage-and-sqlite.md)，实际结果见 [验证记录](verification.md)。
+
+## 18 SQLite 与迁移恢复（CW-003）
+
+`packages/contracts/state.ts` 承担共用状态校验，服务端旧模块保留兼容导出。`StateRepository` 定义异步 load/save/close；`WorkerStateRepository` 管理请求和线程退出；`StateDatabase` 处理目录写入权、业务数据库和迁移。SQL 使用绑定参数，业务表保持项目、会话、消息、附件、活动及模型配置的关联与顺序。Key 不进入数据库。
+
+Web 使用 `npm run storage:migrate -- <资料目录>` 离线升级，桌面启动时提供「备份并升级 / 退出」。首次检测旧数据不会自动改写；已有迁移记录时可继续恢复。迁移过程验证七个中断阶段，数据库切换后即为权威数据源，即使激活标记还未写入也不重新导入旧 JSON。
+
+所有持久化路由通过 `Storage.update()` 排队，基于最新已提交快照执行同步变更。保存失败时内存保持旧值，后续请求仍能继续；生成请求先提交初始消息，再调用模型，终态提交成功才发 done。关闭服务先停止接收请求、取消并等待活动流和待提交变更，再关闭存储线程与连接。启动端口占用也会释放目录锁。
+
+“关于 → 运行能力”按能力契约 v2 展示数据库保存方式和版本。数据库事务与迁移恢复不等于 Agent 运行恢复；当前没有 token 检查点、SSE 重放或持久 Run。后续 CW-004 将利用稳定 `storeId` 实现脱离浏览器端口的草稿恢复和编辑冲突控制。

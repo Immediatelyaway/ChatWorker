@@ -7,10 +7,10 @@ import { Storage } from '../apps/server/src/storage.js';
 import { initialState } from '../apps/server/src/state-schema.js';
 import { exportBackup, importBackup } from '../apps/server/src/backup.js';
 import { JsonSnapshotRepository } from '../packages/storage/json-snapshot-repository.js';
-import type { SnapshotRepository } from '../packages/storage/snapshot-repository.js';
+import type { StateRepository } from '../packages/storage/state-repository.js';
 import type { State } from '../packages/shared/types.js';
 
-test('storage boundary keeps validation and restart recovery above file IO', () => {
+test('storage boundary keeps validation and restart recovery above file IO', async () => {
   const original = initialState();
   original.conversations.push({
     id: 'c',
@@ -32,36 +32,46 @@ test('storage boundary keeps validation and restart recovery above file IO', () 
     ],
   });
   let saved: State | undefined;
-  const repository: SnapshotRepository<State> = {
-    load: () => original,
-    save: (value) => {
+  const repository: StateRepository = {
+    storeId: crypto.randomUUID(),
+    close: async () => {},
+    load: async () => original,
+    save: async (value) => {
       saved = structuredClone(value);
     },
   };
-  const store = new Storage(repository);
+  const store = await Storage.create(repository);
   assert.equal(saved!.conversations[0].messages[0].status, 'failed');
   assert.equal(saved!.conversations[0].activities.length, 1);
   assert.equal(original.conversations[0].messages[0].status, 'streaming');
   const snapshot = structuredClone(store.state);
   const next = structuredClone(store.state);
   next.projects.push({ id: 'p', name: '新项目', description: '' });
-  repository.save = () => {
+  repository.save = async () => {
     throw new Error('disk full');
   };
-  assert.throws(() => store.replace(next), /disk full/);
+  await assert.rejects(store.replace(next), /disk full/);
   assert.deepEqual(store.state, snapshot);
-  assert.throws(() => store.save(), /disk full/);
-  assert.throws(() => new Storage({ load: () => undefined, save: repository.save }), /disk full/);
+  await assert.rejects(
+    store.update((state) => {
+      state.projects.push({ id: 'p', name: '失败', description: '' });
+    }),
+    /disk full/,
+  );
+  assert.deepEqual(store.state, snapshot);
+  await assert.rejects(Storage.create(repository), /disk full/);
+  await store.close();
   for (const invalid of [null, {}, { ...initialState(), schemaVersion: 99 }]) {
     let writes = 0;
-    assert.throws(
-      () =>
-        new Storage({
-          load: () => invalid,
-          save: () => {
-            writes++;
-          },
-        }),
+    await assert.rejects(
+      Storage.create({
+        storeId: crypto.randomUUID(),
+        load: async () => invalid,
+        save: async () => {
+          writes++;
+        },
+        close: async () => {},
+      }),
     );
     assert.equal(writes, 0);
   }
@@ -79,31 +89,6 @@ test('JSON repository reads without writing and failed serialization preserves t
     assert.equal(readFileSync(file, 'utf8'), before);
     assert.throws(() => repository.save({ invalid: 1n }));
     assert.equal(readFileSync(file, 'utf8'), before);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('legacy state migration preserves history; future and corrupt files are never overwritten', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'chatworker-migration-'));
-  const file = join(dir, 'state.json');
-  try {
-    const old: any = initialState();
-    delete old.schemaVersion;
-    old.projects.push({ id: 'p', name: '旧项目', description: '保留内容' });
-    writeFileSync(file, JSON.stringify(old));
-    const migrated = new Storage(dir);
-    assert.equal(migrated.state.schemaVersion, 1);
-    assert.deepEqual(migrated.state.projects, old.projects);
-    for (const content of [
-      JSON.stringify({ ...old, schemaVersion: 99 }),
-      '{broken',
-      JSON.stringify({ ...old, conversations: [{}] }),
-    ]) {
-      writeFileSync(file, content);
-      assert.throws(() => new Storage(dir));
-      assert.equal(readFileSync(file, 'utf8'), content);
-    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

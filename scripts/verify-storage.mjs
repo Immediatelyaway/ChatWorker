@@ -50,6 +50,7 @@ try {
   const output = join(staging, 'packaged');
   mkdirSync(project);
   cpSync(compiled, project, { recursive: true });
+  cpSync(join(root, 'node_modules/zod'), join(project, 'node_modules/zod'), { recursive: true });
   cpSync(join(root, 'scripts/storage-probe-main.mjs'), join(project, 'main.mjs'));
   writeFileSync(
     join(project, 'package.json'),
@@ -61,6 +62,7 @@ try {
       author: 'ChatWorker contributors',
       type: 'module',
       main: 'main.mjs',
+      dependencies: { zod: require('zod/package.json').version },
     }),
   );
 
@@ -79,7 +81,7 @@ try {
       electronVersion,
       electronDist: join(dirname(require.resolve('electron/package.json')), 'dist'),
       directories: { output },
-      files: ['main.mjs', 'package.json', 'packages/**/*', 'tests/**/*'],
+      files: ['main.mjs', 'package.json', 'packages/**/*', 'tests/**/*', 'apps/**/*'],
       mac: { identity: '-' },
       afterPack: join(root, 'scripts/after-pack.cjs'),
     }),

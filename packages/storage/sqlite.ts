@@ -29,7 +29,8 @@ export function hasWalResetFix(version: string): boolean {
 }
 
 /**
- * CW-002 driver candidate. Not imported by the running JSON-backed application.
+ * Shared connection settings for probes and newly-created migration staging databases.
+ * Existing business databases must pass StateDatabase's header/schema preflight first.
  * Caller owns the private local directory, schema/version checks, transactions and close().
  * All operations (including busy waits) block the calling thread.
  */

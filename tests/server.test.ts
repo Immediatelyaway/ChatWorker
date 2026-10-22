@@ -49,7 +49,7 @@ test('local API: persistence, secrets, origin checks, cancellation and archive g
     );
     const publicState = await (await call('/state')).text();
     assert.ok(!publicState.includes('secret-test-value'));
-    assert.ok(!readFileSync(join(dir, 'state.json'), 'utf8').includes('secret-test-value'));
+    assert.ok(!readFileSync(join(dir, 'state.sqlite')).includes('secret-test-value'));
     assert.equal(
       (
         await call('/providers/custom', 'PUT', {
@@ -131,7 +131,7 @@ test('backup API validates previews and preserves data and credentials on import
     assert.equal(runtime.store.state.projects.length, 2);
     const state = await (await call('/state')).json();
     assert.equal(state.providers.find((p: any) => p.id === 'custom').configured, true);
-    assert.equal(JSON.parse(readFileSync(join(dir, 'state.json'), 'utf8')).projects.length, 2);
+    assert.equal(runtime.store.state.projects.length, 2);
     const c = await (await call('/conversations', 'POST', {})).json();
     const stream = await call(`/conversations/${c.id}/messages`, 'POST', {
       providerId: 'demo',

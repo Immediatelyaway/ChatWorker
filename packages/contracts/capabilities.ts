@@ -18,10 +18,11 @@ export const capabilitiesSchema = z.object({
     .min(1)
     .max(4),
   storage: z.object({
-    history: z.literal('json-file'),
+    history: z.literal('sqlite'),
     drafts: z.literal('browser-local'),
     keyPersistence: z.enum(['memory', 'persistent']),
     stateVersion: positiveInteger,
+    databaseVersion: positiveInteger,
     backupVersion: positiveInteger,
     draftVersion: positiveInteger,
   }),

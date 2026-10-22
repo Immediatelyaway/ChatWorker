@@ -1,7 +1,68 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { send, state, ui } from '../apps/web/src/composables/workspace.js';
+import { send, state, ui, forkConversation } from '../apps/web/src/composables/workspace.js';
 import type { Conversation } from '../packages/shared/types.js';
+
+test('a failed final save preserves the visible reply and its specific error for copying', async () => {
+  const originalFetch = globalThis.fetch;
+  const at = new Date().toISOString();
+  state.conversations = [
+    {
+      id: 'unsaved',
+      title: '新会话',
+      projectId: null,
+      mode: 'chat',
+      archived: false,
+      createdAt: at,
+      updatedAt: at,
+      messages: [],
+      activities: [],
+    },
+  ];
+  state.providers = [
+    {
+      id: 'demo',
+      name: '演示',
+      protocol: 'demo',
+      baseUrl: '',
+      models: ['model'],
+      configured: true,
+    },
+  ];
+  state.preferences.providerId = 'demo';
+  state.preferences.model = 'model';
+  ui.activeId = 'unsaved';
+  ui.busyId = '';
+  ui.preparing = false;
+  let reloads = 0;
+  const message = '回复未能保存，请先复制当前内容';
+  globalThis.fetch = async (input) => {
+    if (input === '/api/state') {
+      reloads++;
+      return Response.json({ ...state, runtime: ui.runtime });
+    }
+    assert.equal(input, '/api/conversations/unsaved/messages');
+    const events = [
+      { type: 'delta', text: '需要保留的回复' },
+      { type: 'error', code: 'persistence_failed', message },
+    ];
+    return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(''));
+  };
+  try {
+    assert.equal(await send('问题', []), false);
+    assert.equal(ui.error, message);
+    assert.equal(state.conversations[0].messages.at(-1)?.content, '需要保留的回复');
+    assert.equal(state.conversations[0].messages.at(-1)?.status, 'failed');
+    const replyId = state.conversations[0].messages.at(-1)!.id;
+    assert.equal(ui.unsavedReplies.has(replyId), true);
+    await forkConversation(replyId, 'retry');
+    assert.equal(reloads, 0, 'do not replace unsaved text with the durable empty placeholder');
+    assert.equal(ui.busyId, '');
+    assert.equal(ui.preparing, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('UI reserves send before creating a conversation and snapshots the selected model', async () => {
   const originalFetch = globalThis.fetch;

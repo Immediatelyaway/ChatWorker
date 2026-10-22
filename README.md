@@ -74,7 +74,7 @@ apps/desktop/      Electron 生命周期与加密凭据
 packages/contracts/能力接口校验、独立格式版本与共用限制
 packages/shared/   跨端数据类型和供应商配置
 packages/providers/三类模型协议与 SSE 解析
-packages/storage/  JSON 快照接口与 SQLite 驱动试验
+packages/storage/  SQLite 仓储、存储线程、目录锁与旧数据迁移
 tests/            协议、异常、取消、持久化等测试
 docs/             设计、验证与后续计划
 ```
@@ -86,19 +86,27 @@ npm run build
 npm run format
 ```
 
-存储选型与桌面打包试验（已验证 Node 22.21.1 / macOS arm64，测试环境建议采用该版本或更新的兼容版本）：
+存储与桌面打包验证（已验证 Node 22.21.1 / macOS arm64，测试环境建议采用该版本或更新的兼容版本）：
 
 ```bash
 npm run verify:storage
 ```
 
-该命令在临时目录运行 Node、Electron 主进程和打包后的测试应用，结束后清理，不迁移现有会话。SQLite 尚未启用到聊天服务；选型、WAL 版本限制及下一步迁移条件见 [存储决策](docs/adr/0001-storage-and-sqlite.md)。
+该命令在临时目录运行 Node、Electron 主进程和打包后的测试应用，验证真实存储线程、旧数据升级、目录锁与重开持久化，结束后清理，不迁移现有会话。驱动选择见 [ADR-0001](docs/adr/0001-storage-and-sqlite.md)，当前迁移与恢复规则见 [ADR-0002](docs/adr/0002-sqlite-migration.md)。
 
 当前已实现的行为见 [现有设计文档](docs/design.md) 与 [验证记录](docs/verification.md)。后续通用智能体的架构、源码依据、数据与接口契约、异常恢复、界面细节及分阶段验收见 [通用智能体整体设计蓝图](docs/agent-architecture-blueprint.md)；蓝图中的规划不代表现有能力。
 
-数据：Web 默认写入运行目录 `.chatworker/state.json`；桌面版默认写入 Electron 的应用用户数据目录。两者默认独立，不自动同步。可通过 `CHATWORKER_DATA_DIR`（Web）或 `CHATWORKER_DESKTOP_DATA_DIR`（桌面）指定目录；不要让两个进程同时写同一目录。
+数据：Web 默认写入运行目录 `.chatworker/state.sqlite`；桌面版默认写入 Electron 的应用用户数据目录。两者默认独立，不自动同步。可通过 `CHATWORKER_DATA_DIR`（Web）或 `CHATWORKER_DESKTOP_DATA_DIR`（桌面）指定目录。同一资料目录只允许一个新版服务持有写入权，第二个服务会明确报错。
 
 ### 备份与迁移
+
+新目录直接初始化 SQLite。已有 `state.json` 时，先关闭使用此目录的旧版 Web 和桌面服务，再离线升级：
+
+```bash
+npm run storage:migrate -- /absolute/path/to/data-directory
+```
+
+完成后重新启动服务；桌面版也可在启动提示中选择「备份并升级」。旧版本不认识新版目录锁，升级后也不要再用旧程序写此目录。升级保留原 JSON 和经过 SHA-256 校验的独立备份；中断后可重新运行并恢复迁移。数据库损坏、版本不兼容或升级后文件缺失时停止启动，不清空记录，也不自动回退旧 JSON。恢复步骤与限制见 [迁移文档](docs/adr/0002-sqlite-migration.md)。
 
 在「设置 → 数据与归档」导出 JSON 备份，或选择备份文件预览后导入（最大 20 MiB）。包含项目、消息、文本附件和活动，不包含 API Key 和模型配置。导入添加独立副本，不覆盖现有数据；重复导入会产生重复副本。Web 与 Electron 可以通过备份迁移会话。
 

@@ -3,5 +3,9 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["packages/storage/sqlite.ts", "tests/helpers/sqlite-contract.ts"]
+  "include": [
+    "packages/storage/**/*.ts",
+    "tests/helpers/sqlite-contract.ts",
+    "tests/helpers/storage-worker-contract.ts"
+  ]
 }

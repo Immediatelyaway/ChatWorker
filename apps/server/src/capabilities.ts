@@ -9,6 +9,7 @@ import {
   STATE_VERSION,
   BACKUP_VERSION,
   DRAFT_VERSION,
+  DATABASE_VERSION,
 } from '../../../packages/contracts/versions.js';
 
 export function describeCapabilities(runtime: {
@@ -22,10 +23,11 @@ export function describeCapabilities(runtime: {
     scope: 'local',
     protocols: ['demo', 'responses', 'openai', 'anthropic'],
     storage: {
-      history: 'json-file',
+      history: 'sqlite',
       drafts: 'browser-local',
       keyPersistence: runtime.persistentKeys ? 'persistent' : 'memory',
       stateVersion: STATE_VERSION,
+      databaseVersion: DATABASE_VERSION,
       backupVersion: BACKUP_VERSION,
       draftVersion: DRAFT_VERSION,
     },

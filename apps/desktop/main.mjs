@@ -1,8 +1,9 @@
-import { app, BrowserWindow, safeStorage, Menu } from 'electron';
+import { app, BrowserWindow, safeStorage, Menu, dialog } from 'electron';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { startServer } from '../../dist/apps/server/src/index.js';
+import { Storage } from '../../dist/apps/server/src/storage.js';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 if (process.env.CHATWORKER_DESKTOP_DATA_DIR) {
   mkdirSync(process.env.CHATWORKER_DESKTOP_DATA_DIR, { recursive: true });
@@ -17,6 +18,10 @@ else {
   });
   void launch().catch((error) => {
     console.error('ChatWorker startup failed', error);
+    dialog.showErrorBox(
+      'ChatWorker 无法启动',
+      error instanceof Error ? error.message : '请检查本机数据目录',
+    );
     app.quit();
   });
 }
@@ -51,13 +56,35 @@ async function launch() {
       }
     },
   };
-  runtime = await startServer({
+  const serverOptions = {
     port: 0,
     dataDir,
     webDir: join(root, 'dist/web'),
     secrets,
     desktop: true,
-  });
+  };
+  try {
+    runtime = await startServer(serverOptions);
+  } catch (error) {
+    if (error.code !== 'LEGACY_MIGRATION_REQUIRED') throw error;
+    const choice = await dialog.showMessageBox({
+      type: 'question',
+      title: '升级本机数据',
+      message: '发现旧版会话数据，需要备份并升级后才能使用。',
+      detail:
+        '请先关闭使用此资料目录的旧版 ChatWorker 和 Web 服务。升级会保留旧文件和独立备份，失败时不会清空会话。',
+      buttons: ['备份并升级', '退出'],
+      defaultId: 1,
+      cancelId: 1,
+    });
+    if (choice.response !== 0) {
+      app.quit();
+      return;
+    }
+    const migrated = await Storage.open(dataDir, { migrateLegacy: true });
+    await migrated.close();
+    runtime = await startServer(serverOptions);
+  }
   const origin = `http://127.0.0.1:${runtime.port}`;
   function createWindow() {
     window = new BrowserWindow({

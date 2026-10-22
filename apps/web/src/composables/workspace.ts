@@ -26,6 +26,7 @@ export const ui = reactive({
   busyId: '',
   preparing: false,
   ready: false,
+  unsavedReplies: new Set<string>(),
   runtime: { desktop: false, persistentKeys: false },
 });
 export const state = reactive<State>({
@@ -61,6 +62,7 @@ export async function load() {
   try {
     const data = await api<State & { runtime: typeof ui.runtime }>('/state');
     Object.assign(state, data);
+    ui.unsavedReplies.clear();
     ui.runtime = data.runtime;
     ui.ready = true;
   } catch (e) {
@@ -141,6 +143,7 @@ export async function send(
   }
   let c = current.value;
   let response: Response;
+  let preserveLocalReply = false;
   const selected = {
     id: provider.value!.id,
     name: provider.value!.name,
@@ -199,7 +202,14 @@ export async function send(
       const event = JSON.parse(raw) as StreamEvent;
       if (event.type === 'delta') answer.content += event.text;
       if (event.type === 'activity') local.activities.push(event.activity);
-      if (event.type === 'error') ui.error = event.message;
+      if (event.type === 'error') {
+        ui.error = event.message;
+        if (event.code === 'persistence_failed') {
+          preserveLocalReply = true;
+          answer.status = 'failed';
+          ui.unsavedReplies.add(answer.id);
+        }
+      }
       if (event.type === 'done') {
         finished = true;
         const index = state.conversations.findIndex((x) => x.id === c!.id);
@@ -207,13 +217,12 @@ export async function send(
       }
     }
     if (!finished) {
-      await load();
-      throw new Error('连接已中断，请查看保存的会话状态');
+      throw new Error(ui.error || '连接已中断，请查看保存的会话状态');
     }
     return true;
   } catch (e) {
     ui.error = (e as Error).message;
-    await load();
+    if (!preserveLocalReply) await load();
     return false;
   } finally {
     ui.preparing = false;
@@ -221,6 +230,7 @@ export async function send(
   }
 }
 export async function forkConversation(messageId: string, intent: 'continue' | 'retry') {
+  if (ui.unsavedReplies.has(messageId)) return;
   if (!current.value || ui.busyId || ui.preparing) return;
   if (intent === 'retry' && (!provider.value?.configured || !state.preferences.model)) {
     ui.page = 'settings';

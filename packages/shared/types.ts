@@ -58,7 +58,7 @@ export type StreamEvent =
   | { type: 'delta'; text: string }
   | { type: 'activity'; activity: Activity }
   | { type: 'done'; conversation: Conversation }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string; code?: 'persistence_failed' };
 export const providerDefaults: Provider[] = [
   {
     id: 'demo',

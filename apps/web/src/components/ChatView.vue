@@ -98,9 +98,11 @@ watch(
               <span v-if="m.status === 'streaming' && m.content" class="typing-cursor"></span>
               <p v-if="m.status === 'cancelled' || m.status === 'failed'" class="message-status">
                 {{
-                  m.status === 'cancelled'
-                    ? '已停止生成'
-                    : '本次生成未完成，可以在新分支中重新生成。'
+                  ui.unsavedReplies.has(m.id)
+                    ? '这条回复尚未保存，请先复制；刷新或离开后可能丢失。'
+                    : m.status === 'cancelled'
+                      ? '已停止生成'
+                      : '本次生成未完成，可以在新分支中重新生成。'
                 }}
               </p>
               <div v-if="m.status !== 'streaming'" class="message-actions">
@@ -115,7 +117,7 @@ watch(
                 </button>
                 <button
                   class="text-button"
-                  :disabled="!!ui.busyId || ui.preparing"
+                  :disabled="!!ui.busyId || ui.preparing || ui.unsavedReplies.has(m.id)"
                   title="保留当前回复及之前的消息，在独立分支继续对话"
                   @click="forkConversation(m.id, 'continue')"
                 >
@@ -123,7 +125,7 @@ watch(
                 </button>
                 <button
                   class="text-button"
-                  :disabled="!!ui.busyId || ui.preparing"
+                  :disabled="!!ui.busyId || ui.preparing || ui.unsavedReplies.has(m.id)"
                   title="使用当前选定模型在新分支重新回答，真实模型可能产生 API 费用"
                   @click="forkConversation(m.id, 'retry')"
                 >

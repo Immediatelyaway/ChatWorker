@@ -76,9 +76,10 @@ test('retry API uses copied user context once, preserves source and persists gen
     });
   try {
     const source = fixture();
-    runtime.store.state.projects.push({ id: 'project', name: '项目', description: '' });
-    runtime.store.state.conversations.push(source);
-    runtime.store.save();
+    await runtime.store.update((state) => {
+      state.projects.push({ id: 'project', name: '项目', description: '' });
+      state.conversations.push(source);
+    });
     const snapshot = structuredClone(source);
     assert.equal(
       (await call('/conversations/missing/branch', 'POST', { messageId: 'a1', intent: 'retry' }))

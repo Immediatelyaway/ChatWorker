@@ -77,7 +77,7 @@ onUnmounted(client.dispose);
         <div class="setting-row">
           <div>
             <strong>会话保存</strong>
-            <p>保存在本机数据文件中，可以导出备份。</p>
+            <p>保存在本机数据库中，保存失败会明确提示，可以导出会话备份。</p>
           </div>
           <span>本机保存</span>
         </div>
@@ -144,9 +144,10 @@ onUnmounted(client.dispose);
           能力接口 v{{ state.data.contractVersion }} · 会话数据 v{{
             state.data.storage.stateVersion
           }}
-          · 备份 v{{ state.data.storage.backupVersion }} · 草稿 v{{
-            state.data.storage.draftVersion
+          · 数据库 v{{ state.data.storage.databaseVersion }} · 备份 v{{
+            state.data.storage.backupVersion
           }}
+          · 草稿 v{{ state.data.storage.draftVersion }}
         </p>
         <p>各格式独立演进，应用升级不一定改变数据格式。</p>
       </details>

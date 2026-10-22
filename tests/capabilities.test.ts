@@ -41,13 +41,14 @@ test('capabilities reflect Web and desktop runtime without leaking or changing l
     const runtime = await startServer({ port: 0, dataDir: dir, desktop: config.desktop, secrets });
     const origin = `http://127.0.0.1:${runtime.port}`;
     try {
-      runtime.store.state.projects.push({
-        id: 'private-id',
-        name: 'private-project-marker',
-        description: 'private-content-marker',
+      await runtime.store.update((state) => {
+        state.projects.push({
+          id: 'private-id',
+          name: 'private-project-marker',
+          description: 'private-content-marker',
+        });
       });
-      runtime.store.save();
-      const before = readFileSync(join(dir, 'state.json'), 'utf8');
+      const before = readFileSync(join(dir, 'state.sqlite'));
       const url = origin + '/api/v1/capabilities';
       const response = await fetch(url, { headers: { 'X-ChatWorker': '1' } });
       assert.equal(response.status, 200);
@@ -60,7 +61,9 @@ test('capabilities reflect Web and desktop runtime without leaking or changing l
       assert.equal(info.appVersion, manifest.version);
       assert.equal(info.environment, config.desktop ? 'desktop' : 'web');
       assert.equal(info.storage.keyPersistence, config.persistentKeys ? 'persistent' : 'memory');
-      assert.equal(info.storage.stateVersion, JSON.parse(before).schemaVersion);
+      assert.equal(info.storage.stateVersion, runtime.store.state.schemaVersion);
+      assert.equal(info.storage.history, 'sqlite');
+      assert.equal(info.storage.databaseVersion, 1);
       const backup = await fetch(origin + '/api/backups', {
         headers: { 'X-ChatWorker': '1' },
       }).then((r) => r.json());
@@ -76,7 +79,7 @@ test('capabilities reflect Web and desktop runtime without leaking or changing l
         'api.openai.com',
       ])
         assert.ok(!raw.includes(privateValue));
-      assert.equal(readFileSync(join(dir, 'state.json'), 'utf8'), before);
+      assert.deepEqual(readFileSync(join(dir, 'state.sqlite')), before);
       assert.equal((await fetch(url)).status, 403);
       assert.equal(
         (
@@ -171,7 +174,7 @@ test('capability client clears stale success on failure and recovers without blo
   assert.equal(client.state.status, 'error');
   assert.equal(client.state.data, null);
   assert.match(client.state.error, /更新并重启/);
-  result = Response.json({ ...sample(), contractVersion: 2 });
+  result = Response.json({ ...sample(), contractVersion: sample().contractVersion + 1 });
   await client.load();
   assert.match(client.state.error, /版本不兼容/);
   result = new Response('<html>old frontend</html>');

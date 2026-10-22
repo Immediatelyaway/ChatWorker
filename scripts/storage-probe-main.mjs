@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifySqliteContract } from './tests/helpers/sqlite-contract.js';
+import { verifyStorageWorkerContract } from './tests/helpers/storage-worker-contract.js';
 import { openSqliteDatabase, hasWalResetFix } from './packages/storage/sqlite.js';
 
 const directory = mkdtempSync(join(tmpdir(), 'chatworker-storage-probe-data-'));
@@ -19,6 +20,7 @@ try {
     if (app.isPackaged) assert.match(app.getAppPath(), /app\.asar$/);
   }
   const result = verifySqliteContract(directory);
+  const workerChecks = await verifyStorageWorkerContract(directory);
   let wal;
   if (hasWalResetFix(result.sqlite)) {
     wal = verifySqliteContract(directory, 'wal');
@@ -38,6 +40,7 @@ try {
       node: process.versions.node,
       electron: process.versions.electron,
       ...result,
+      workerChecks,
       wal,
     }),
   );

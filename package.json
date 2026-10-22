@@ -13,6 +13,7 @@
     "desktop:pack": "npm run build && node scripts/package-desktop.mjs",
     "test": "tsx --test tests/*.test.ts",
     "verify:storage": "node scripts/verify-storage.mjs",
+    "storage:migrate": "tsx apps/server/src/migrate.ts",
     "typecheck": "vue-tsc --noEmit",
     "format": "prettier --write apps packages tests docs README.md"
   },
