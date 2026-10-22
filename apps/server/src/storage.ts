@@ -1,3 +1,4 @@
+import type { DraftWrite, DraftCopy } from '../../../packages/contracts/drafts.js';
 import { type State } from '../../../packages/shared/types.js';
 import { WorkerStateRepository } from '../../../packages/storage/worker-repository.js';
 import type { StateRepository } from '../../../packages/storage/state-repository.js';
@@ -57,8 +58,7 @@ export class Storage {
   }
   /** Mutators must be synchronous. Only committed snapshots become visible to other requests. */
   update<T>(mutate: (next: State) => T): Promise<T> {
-    if (this.closing) return Promise.reject(new Error('存储已关闭'));
-    const task = this.tail.then(async () => {
+    return this.enqueue(async () => {
       const next = structuredClone(this.current);
       const result = mutate(next);
       if (result instanceof Promise) throw new Error('存储变更不能包含异步操作');
@@ -68,8 +68,24 @@ export class Storage {
       this.current = validated;
       return response;
     });
+  }
+  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.closing) return Promise.reject(new Error('存储已关闭'));
+    const task = this.tail.then(operation);
     this.tail = task.catch(() => {});
     return task;
+  }
+  archiveDraft(key: string, input: DraftCopy) {
+    return this.enqueue(() => this.repository.archiveDraft(key, input));
+  }
+  listDraftRecoveries(key: string) {
+    return this.enqueue(() => this.repository.listDraftRecoveries(key));
+  }
+  readDraft(key: string) {
+    return this.enqueue(() => this.repository.readDraft(key));
+  }
+  writeDraft(key: string, input: DraftWrite) {
+    return this.enqueue(() => this.repository.writeDraft(key, input));
   }
   replace(next: State) {
     const replacement = decodeState(next);

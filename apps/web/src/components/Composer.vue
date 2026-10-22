@@ -1,11 +1,68 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Icon from './Icon.vue';
 import { ui, state, provider, send, cancel, preference, notify } from '../composables/workspace';
 import { drafts, draftKey } from '../composables/drafts';
+import type { DraftReceipt } from '../composables/synced-drafts';
 import { CHAT_LIMITS } from '../../../../packages/contracts/limits';
 const key = computed(() => draftKey(ui.activeId, ui.projectId, ui.mode));
-const draft = computed(() => drafts.get(key.value));
+const entry = computed(() => drafts.get(key.value));
+const draft = computed(() => entry.value.draft);
+const preparingDraft = ref(false);
+watch(
+  key,
+  (value) => {
+    void drafts.open(value);
+  },
+  { immediate: true },
+);
+function refreshDraft() {
+  if (document.visibilityState === 'visible') void drafts.refresh(key.value);
+}
+function leaving() {
+  void drafts.flushAll();
+}
+let refreshTimer: ReturnType<typeof setInterval>;
+onMounted(() => {
+  refreshTimer = setInterval(refreshDraft, 5000);
+  window.addEventListener('focus', refreshDraft);
+  window.addEventListener('online', refreshDraft);
+  window.addEventListener('pagehide', leaving);
+});
+onUnmounted(() => {
+  clearInterval(refreshTimer);
+  window.removeEventListener('focus', refreshDraft);
+  window.removeEventListener('online', refreshDraft);
+  window.removeEventListener('pagehide', leaving);
+  void drafts.flushAll();
+});
+const statusText = computed(
+  () =>
+    ({
+      loading: '正在读取草稿…',
+      saved: '草稿已保存到本机，重启后可恢复',
+      dirty: '草稿等待保存…',
+      saving: '正在保存草稿…',
+      offline: '尚未保存到资料库，请保留当前窗口或下载副本',
+      conflict: '另一窗口已修改此草稿，请选择要保留的版本',
+    })[entry.value.status],
+);
+function downloadDraft() {
+  const payload = {
+    format: 'chatworker-draft-copy',
+    version: 1,
+    local: drafts.snapshot(key.value),
+    saved: entry.value.remote?.draft,
+  };
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+  );
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'ChatWorker-草稿副本.json';
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 const text = computed({
   get: () => draft.value.text,
   set: (value: string) => drafts.set(key.value, { ...draft.value, text: value }),
@@ -15,22 +72,36 @@ const input = ref<HTMLInputElement>(),
   picker = ref(false);
 const available = computed(() => state.providers.filter((p) => p.configured));
 async function submit() {
-  const content = text.value.trim();
-  if (!content || ui.busyId || ui.preparing) return;
+  if (!text.value.trim() || ui.busyId || ui.preparing || preparingDraft.value || entry.value.remote)
+    return;
   const sourceKey = key.value;
   let sendingKey = sourceKey;
-  const snapshot = drafts.snapshot(sendingKey);
-  await send(content, snapshot.attachments, false, {
-    created: (id) => {
-      const target = draftKey(id, '', '');
-      drafts.move(sendingKey, target);
-      sendingKey = target;
-    },
-    accepted: () => {
-      drafts.clearIfUnchanged(sendingKey, snapshot);
-      if (sourceKey !== sendingKey) drafts.clearIfUnchanged(sourceKey, snapshot);
-    },
-  });
+  preparingDraft.value = true;
+  try {
+    let receipt: DraftReceipt | undefined = await drafts.flush(sourceKey);
+    if (!receipt) {
+      notify('请先保存草稿或处理版本冲突，再发送');
+      return;
+    }
+    const sourceReceipt = receipt;
+    await send(receipt.draft.text.trim(), receipt.draft.attachments, false, {
+      created: async (id) => {
+        const target = draftKey(id, '', '');
+        const moved = await drafts.move(sourceKey, target, sourceReceipt);
+        if (!moved) throw new Error('会话已创建，但草稿转存未完成；原草稿已保留，请重试');
+        receipt = moved;
+        sendingKey = target;
+      },
+      accepted: () => {
+        preparingDraft.value = false;
+        // Acknowledgement only clears the exact saved revision and local edit generation.
+        void drafts.clearIfUnchanged(sendingKey, receipt!);
+        if (sourceKey !== sendingKey) void drafts.clearIfUnchanged(sourceKey, sourceReceipt);
+      },
+    });
+  } finally {
+    preparingDraft.value = false;
+  }
 }
 function removeAttachment(index: number) {
   drafts.set(key.value, {
@@ -48,7 +119,7 @@ async function files(e: Event) {
   const targetKey = key.value;
   const list = Array.from((e.target as HTMLInputElement).files ?? []);
   for (const file of list) {
-    if (drafts.get(targetKey).attachments.length >= CHAT_LIMITS.attachmentsPerMessage) {
+    if (drafts.get(targetKey).draft.attachments.length >= CHAT_LIMITS.attachmentsPerMessage) {
       notify(`最多添加 ${CHAT_LIMITS.attachmentsPerMessage} 个文本附件`);
       break;
     }
@@ -69,7 +140,7 @@ async function files(e: Event) {
       notify('不能读取二进制文件');
       continue;
     }
-    const target = drafts.get(targetKey);
+    const target = drafts.get(targetKey).draft;
     if (target.attachments.length >= CHAT_LIMITS.attachmentsPerMessage) {
       notify(`最多添加 ${CHAT_LIMITS.attachmentsPerMessage} 个文本附件`);
       break;
@@ -106,7 +177,7 @@ defineExpose({ fill });
       </div>
       <textarea
         v-model="text"
-        :disabled="ui.preparing"
+        :disabled="ui.preparing || preparingDraft || !entry.loaded"
         aria-label="消息"
         :placeholder="ui.mode === 'work' ? '描述你的想法，让我们一起完成…' : '有什么想聊的？'"
         rows="3"
@@ -118,6 +189,7 @@ defineExpose({ fill });
           class="icon-button"
           title="添加文本或代码附件"
           aria-label="添加附件"
+          :disabled="ui.preparing || preparingDraft || !entry.loaded"
           @click="input?.click()"
         >
           <Icon name="plus" :size="22" /></button
@@ -168,7 +240,14 @@ defineExpose({ fill });
         ><button
           v-else
           class="send-button"
-          :disabled="!text.trim() || !ui.ready || ui.preparing"
+          :disabled="
+            !text.trim() ||
+            !ui.ready ||
+            ui.preparing ||
+            preparingDraft ||
+            !entry.loaded ||
+            !!entry.remote
+          "
           title="发送消息"
           aria-label="发送消息"
           @click="submit"
@@ -181,15 +260,72 @@ defineExpose({ fill });
         </button>
       </div>
     </div>
-    <div v-if="drafts.warnings[key]" class="draft-warning" role="alert">
-      {{ drafts.warnings[key] }}
-    </div>
-    <div v-else-if="text || attachments.length" class="draft-status" role="status">
-      <span>草稿已保存，可刷新恢复</span>
-      <button type="button" class="text-button" :disabled="ui.preparing" @click="drafts.clear(key)">
+    <div class="draft-status" role="status">
+      <span>{{ statusText }}</span>
+      <button
+        v-if="text || attachments.length"
+        type="button"
+        class="text-button"
+        :disabled="ui.preparing || preparingDraft || !entry.loaded || !!entry.remote"
+        @click="drafts.clear(key)"
+      >
         清空草稿
       </button>
     </div>
+    <div v-if="entry.warning || entry.cacheWarning" class="draft-warning" role="alert">
+      {{ entry.warning || entry.cacheWarning }}
+    </div>
+    <div v-if="entry.status === 'offline'" class="draft-actions">
+      <button
+        type="button"
+        class="text-button"
+        @click="entry.loaded ? drafts.flush(key) : drafts.open(key)"
+      >
+        重试保存与读取
+      </button>
+      <button type="button" class="text-button" @click="downloadDraft">下载窗口副本</button>
+    </div>
+    <div v-if="entry.remote" class="draft-conflict" role="region" aria-label="草稿版本冲突">
+      <p>两个版本都保留在这里。选择窗口版本时仍会核对最新版本，避免覆盖后续修改。</p>
+      <div class="draft-versions">
+        <div>
+          <strong>本窗口版本</strong>
+          <pre>{{ text || '（无文字）' }}</pre>
+          <small v-for="(a, i) in attachments" :key="i">{{ a.name }}</small>
+        </div>
+        <div>
+          <strong>资料库已保存版本</strong>
+          <pre>{{ entry.remote.draft.text || '（无文字）' }}</pre>
+          <small v-for="(a, i) in entry.remote.draft.attachments" :key="i">{{ a.name }}</small>
+        </div>
+      </div>
+      <div class="draft-actions">
+        <button type="button" class="secondary-button" @click="drafts.keepLocal(key)">
+          保存本窗口版本
+        </button>
+        <button type="button" class="secondary-button" @click="drafts.useRemote(key)">
+          采用已保存版本
+        </button>
+        <button type="button" class="text-button" @click="downloadDraft">下载两个版本</button>
+      </div>
+    </div>
+    <details v-if="entry.recoveries.length" class="draft-recoveries">
+      <summary>可恢复的草稿副本（{{ entry.recoveries.length }}）</summary>
+      <div v-for="copy in entry.recoveries" :key="copy.id">
+        <span
+          >{{ copy.label }} · {{ copy.draft.text.slice(0, 60) || '附件草稿' }} ·
+          {{ copy.draft.attachments.length }} 个附件</span
+        >
+        <button
+          type="button"
+          class="text-button"
+          :disabled="!entry.loaded || entry.status === 'saving'"
+          @click="drafts.recover(key, copy.id)"
+        >
+          比较并恢复
+        </button>
+      </div>
+    </details>
     <div class="composer-bottom">
       <div>
         <Icon name="folder" :size="14" /><select
@@ -202,7 +338,12 @@ defineExpose({ fill });
             {{ p.name }}
           </option></select
         ><span class="bottom-divider"></span
-        ><button @click="input?.click()"><Icon name="attach" :size="14" />添加文件</button>
+        ><button
+          :disabled="ui.preparing || preparingDraft || !entry.loaded"
+          @click="input?.click()"
+        >
+          <Icon name="attach" :size="14" />添加文件
+        </button>
       </div>
       <span class="keyboard-hint">Enter 发送 · Shift Enter 换行</span>
     </div>

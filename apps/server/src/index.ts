@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { z } from 'zod';
+import { draftRoutes } from './drafts.js';
 import { Storage, memorySecrets, type SecretStore } from './storage.js';
 import { streamModel } from '../../../packages/providers/index.js';
 import {
@@ -81,6 +82,7 @@ export async function startServer(
   });
   app.use('/api/backups', express.json({ limit: BACKUP_LIMIT }));
   app.use(express.json({ limit: '2mb' }));
+  app.use('/api/v1/drafts', draftRoutes(store));
   app.get('/api/v1/capabilities', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     res.json(
@@ -542,23 +544,27 @@ export async function startServer(
     if (res.headersSent) return;
     res
       .status(
-        err instanceof RequestError
-          ? err.status
-          : err instanceof z.ZodError || err.type === 'entity.parse.failed'
-            ? 400
-            : err.type === 'entity.too.large'
-              ? 413
-              : 500,
+        err.code === 'DRAFT_TARGET_MISSING'
+          ? 404
+          : err instanceof RequestError
+            ? err.status
+            : err instanceof z.ZodError || err.type === 'entity.parse.failed'
+              ? 400
+              : err.type === 'entity.too.large'
+                ? 413
+                : 500,
       )
       .json({
         error:
-          err instanceof RequestError
+          err.code === 'DRAFT_TARGET_MISSING'
             ? err.message
-            : err.type === 'entity.too.large'
-              ? '文件或请求超过大小限制'
-              : err instanceof z.ZodError || err.type === 'entity.parse.failed'
-                ? '输入格式或数据版本不正确，请检查文件、必填项和长度'
-                : '服务暂时无法处理请求',
+            : err instanceof RequestError
+              ? err.message
+              : err.type === 'entity.too.large'
+                ? '文件或请求超过大小限制'
+                : err instanceof z.ZodError || err.type === 'entity.parse.failed'
+                  ? '输入格式或数据版本不正确，请检查文件、必填项和长度'
+                  : '服务暂时无法处理请求',
       });
   });
   const server: Server = await new Promise<Server>((resolve, reject) => {

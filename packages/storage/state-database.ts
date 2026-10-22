@@ -25,6 +25,14 @@ import {
   writeStateRows,
 } from './state-tables.js';
 import { atomicWrite, requireRegularFile, syncDirectory, syncFile } from './files.js';
+import {
+  createDraftTables,
+  readDraftRow,
+  writeDraftRow,
+  listDraftRecoveries,
+  archiveDraft,
+} from './draft-tables.js';
+import type { DraftWrite, DraftCopy } from '../contracts/drafts.js';
 import { lockDirectory, StorageError } from './directory-lock.js';
 
 const manifestSchema = z
@@ -67,13 +75,16 @@ function checkHeader(file: string) {
   } finally {
     closeSync(fd);
   }
-  if (header.readUInt32BE(60) !== DATABASE_VERSION || header.readUInt32BE(68) !== APPLICATION_ID)
+  if (
+    ![1, DATABASE_VERSION].includes(header.readUInt32BE(60)) ||
+    header.readUInt32BE(68) !== APPLICATION_ID
+  )
     throw new StorageError('DATABASE_VERSION', '数据库版本不受支持，已保留原文件，请使用兼容版本');
   if (header[18] !== 1 || header[19] !== 1)
     throw new StorageError('DATABASE_MODE', '此数据库的日志格式不受当前业务存储支持，已保留原文件');
 }
 
-function openExisting(file: string) {
+function openExisting(file: string, expectedIds: (string | undefined)[] = []) {
   // Read the header before writable open. A known-schema hot journal may then be recovered by SQLite.
   checkHeader(file);
   for (const suffix of ['-journal', '-wal', '-shm']) requireRegularFile(file + suffix);
@@ -84,7 +95,9 @@ function openExisting(file: string) {
   });
   try {
     if (
-      db.prepare('PRAGMA user_version').get()?.user_version !== DATABASE_VERSION ||
+      ![1, DATABASE_VERSION].includes(
+        Number(db.prepare('PRAGMA user_version').get()?.user_version),
+      ) ||
       db.prepare('PRAGMA application_id').get()?.application_id !== APPLICATION_ID ||
       db.prepare('PRAGMA journal_mode').get()?.journal_mode !== 'delete'
     )
@@ -99,7 +112,35 @@ function openExisting(file: string) {
       .string()
       .uuid()
       .parse(db.prepare("SELECT value FROM metadata WHERE key='storeId'").get()?.value);
+    if (expectedIds.some((id) => id && id !== storeId))
+      throw new StorageError('STORE_ID_MISMATCH', '数据库与资料目录标识不一致，请先检查备份');
     db.exec('PRAGMA synchronous=FULL');
+    if (db.prepare('PRAGMA user_version').get()?.user_version === 1) {
+      // The directory lock is held and hot journals have recovered. Hold a DB write lock too.
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const bytes = readFileSync(file);
+        const backup = file + '.backup-v1-' + hash(bytes);
+        if (requireRegularFile(backup)) {
+          if (hash(readFileSync(backup)) !== hash(bytes))
+            throw new StorageError('BACKUP_CORRUPT', '数据库升级备份校验失败');
+        } else atomicWrite(backup, bytes);
+        chmodSync(backup, 0o400);
+        syncFile(backup);
+        createDraftTables(db);
+        db.exec('PRAGMA user_version = ' + DATABASE_VERSION);
+        db.exec('COMMIT');
+      } catch (error) {
+        if (db.isTransaction) db.exec('ROLLBACK');
+        throw error;
+      }
+    }
+    db.prepare(
+      'SELECT owner_key,revision,text,attachments_json,updated_at FROM drafts LIMIT 0',
+    ).all();
+    db.prepare(
+      'SELECT id,owner_key,revision,text,attachments_json,content_hash,created_at FROM draft_recoveries LIMIT 0',
+    ).all();
     return { db, storeId };
   } catch (error) {
     db.close();
@@ -206,7 +247,7 @@ export class StateDatabase {
         syncDirectory(dir);
         options.onMigrationPhase?.('after-switch');
       }
-      opened = openExisting(database);
+      opened = openExisting(database, [marker?.storeId, plan?.storeId]);
       if (
         (marker && marker.storeId !== opened.storeId) ||
         (plan && plan.storeId !== opened.storeId)
@@ -241,6 +282,22 @@ export class StateDatabase {
       if (this.db.isTransaction) this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+  archiveDraft(key: string, input: DraftCopy) {
+    this.assertOpen();
+    archiveDraft(this.db, key, input);
+  }
+  listDraftRecoveries(key: string) {
+    this.assertOpen();
+    return listDraftRecoveries(this.db, key);
+  }
+  readDraft(key: string) {
+    this.assertOpen();
+    return readDraftRow(this.db, key);
+  }
+  writeDraft(key: string, input: DraftWrite) {
+    this.assertOpen();
+    return writeDraftRow(this.db, key, input);
   }
   close() {
     if (this.closed) return;

@@ -1,3 +1,4 @@
+import { createDraftTables } from './draft-tables.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { decodeState } from '../contracts/state.js';
@@ -36,6 +37,7 @@ export function createStateTables(db: DatabaseSync, storeId: string = randomUUID
     CREATE TABLE provider_models (provider_id TEXT NOT NULL REFERENCES providers(id), position INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY(provider_id,position)) STRICT;
     CREATE TABLE preferences (singleton INTEGER PRIMARY KEY CHECK(singleton=1), theme TEXT NOT NULL, provider_id TEXT NOT NULL REFERENCES providers(id), model TEXT NOT NULL, system_prompt TEXT NOT NULL) STRICT;
   `);
+  createDraftTables(db);
   db.prepare('INSERT INTO metadata VALUES (?,?)').run('storeId', storeId);
   db.prepare('INSERT INTO metadata VALUES (?,?)').run('stateVersion', String(STATE_VERSION));
 }
@@ -85,6 +87,30 @@ export function writeStateRows(db: DatabaseSync, input: State) {
     provider.run(p.id, i, p.name, p.protocol, p.baseUrl);
     p.models.forEach((name, j) => model.run(p.id, j, name));
   });
+  // Keep revision tombstones so stale clients cannot recreate deleted context drafts.
+  const projectIds = new Set(state.projects.map((p) => p.id));
+  const conversationIds = new Set(state.conversations.map((c) => c.id));
+  for (const row of db
+    .prepare("SELECT owner_key FROM drafts WHERE text <> '' OR attachments_json <> '[]'")
+    .all()) {
+    const key = String(row.owner_key);
+    const missing = key.startsWith('conversation:')
+      ? !conversationIds.has(key.slice(13))
+      : !!key.replace(/^new:(chat|work):/, '') &&
+        !projectIds.has(key.replace(/^new:(chat|work):/, ''));
+    if (missing)
+      db.prepare(
+        "UPDATE drafts SET revision=revision+1,text='',attachments_json='[]',updated_at=? WHERE owner_key=?",
+      ).run(new Date().toISOString(), key);
+  }
+  for (const row of db.prepare('SELECT DISTINCT owner_key FROM draft_recoveries').all()) {
+    const key = String(row.owner_key);
+    const missing = key.startsWith('conversation:')
+      ? !conversationIds.has(key.slice(13))
+      : !!key.replace(/^new:(chat|work):/, '') &&
+        !projectIds.has(key.replace(/^new:(chat|work):/, ''));
+    if (missing) db.prepare('DELETE FROM draft_recoveries WHERE owner_key=?').run(key);
+  }
   const p = state.preferences;
   db.prepare('INSERT INTO preferences VALUES (1,?,?,?,?)').run(
     p.theme,

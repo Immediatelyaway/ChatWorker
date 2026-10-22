@@ -33,6 +33,14 @@ test('storage boundary keeps validation and restart recovery above file IO', asy
   });
   let saved: State | undefined;
   const repository: StateRepository = {
+    archiveDraft: async () => {},
+    listDraftRecoveries: async () => [],
+    readDraft: async () => {
+      throw new Error('not used');
+    },
+    writeDraft: async () => {
+      throw new Error('not used');
+    },
     storeId: crypto.randomUUID(),
     close: async () => {},
     load: async () => original,
@@ -65,6 +73,14 @@ test('storage boundary keeps validation and restart recovery above file IO', asy
     let writes = 0;
     await assert.rejects(
       Storage.create({
+        archiveDraft: async () => {},
+        listDraftRecoveries: async () => [],
+        readDraft: async () => {
+          throw new Error('not used');
+        },
+        writeDraft: async () => {
+          throw new Error('not used');
+        },
         storeId: crypto.randomUUID(),
         load: async () => invalid,
         save: async () => {

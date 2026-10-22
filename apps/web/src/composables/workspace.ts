@@ -105,7 +105,8 @@ export async function deleteConversation(id: string) {
   try {
     await api('/conversations/' + id, 'DELETE');
     state.conversations = state.conversations.filter((c) => c.id !== id);
-    drafts.clear(draftKey(id, '', ''));
+    // The service clears the deleted conversation draft in the same state transaction.
+    delete drafts.records[draftKey(id, '', '')];
     if (ui.activeId === id) newChat();
     notify('会话已删除');
   } catch (e) {
@@ -127,7 +128,7 @@ export async function send(
   content: string,
   attachments: Attachment[],
   reuseLastUser = false,
-  lifecycle: { created?: (id: string) => void; accepted?: () => void } = {},
+  lifecycle: { created?: (id: string) => void | Promise<void>; accepted?: () => void } = {},
 ) {
   if (ui.busyId || ui.preparing) return false;
   ui.error = '';
@@ -157,7 +158,7 @@ export async function send(
         mode: ui.mode,
       });
       state.conversations.unshift(c);
-      lifecycle.created?.(c.id);
+      await lifecycle.created?.(c.id);
       ui.activeId = c.id;
     }
     ui.busyId = c.id;

@@ -20,12 +20,30 @@ export async function verifyStorageWorkerContract(directory: string) {
       state.projects[0].name = '升级后';
     });
     assert.equal(store.state.projects[0].name, '升级后');
+    await store.writeDraft('new:work:p', {
+      expectedRevision: 0,
+      draft: { text: '重启草稿', attachments: [{ name: '资料.md', content: '跨启动附件' }] },
+    });
   } finally {
     await store.close();
   }
   const reopened = await Storage.open(data);
   try {
     assert.equal(reopened.storeId, id);
+    assert.equal((await reopened.readDraft('new:work:p')).draft.text, '重启草稿');
+    assert.equal(
+      (await reopened.readDraft('new:work:p')).draft.attachments[0].content,
+      '跨启动附件',
+    );
+    assert.equal(
+      (
+        await reopened.writeDraft('new:work:p', {
+          expectedRevision: 0,
+          draft: { text: '过期覆盖', attachments: [] },
+        })
+      ).ok,
+      false,
+    );
     assert.equal(reopened.state.projects[0].name, '升级后');
     assert.equal(readFileSync(join(data, 'state.json'), 'utf8'), legacy);
   } finally {
@@ -39,5 +57,6 @@ export async function verifyStorageWorkerContract(directory: string) {
     'worker-close',
     'reopen',
     'stable-store-id',
+    'draft-restart-and-cas',
   ];
 }

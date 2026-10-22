@@ -172,7 +172,9 @@ test('send lifecycle keeps draft until server acceptance and does not clear on r
     return new Response(`data: ${JSON.stringify({ type: 'done', conversation: c })}\n\n`);
   };
   const callbacks = {
-    created: (id: string) => events.push('created:' + id),
+    created: (id: string) => {
+      events.push('created:' + id);
+    },
     accepted: () => events.push('accepted'),
   };
   try {

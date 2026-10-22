@@ -1,3 +1,10 @@
+import type {
+  DraftWrite,
+  DraftSnapshot,
+  DraftResult,
+  DraftRecovery,
+  DraftCopy,
+} from '../contracts/drafts.js';
 import { Worker } from 'node:worker_threads';
 import type { State } from '../shared/types.js';
 import type { StateRepository } from './state-repository.js';
@@ -83,14 +90,27 @@ export class WorkerStateRepository implements StateRepository {
     }
   }
 
-  private request(operation: 'load' | 'save' | 'close', state?: State): Promise<unknown> {
+  private request(
+    operation:
+      | 'load'
+      | 'save'
+      | 'close'
+      | 'readDraft'
+      | 'writeDraft'
+      | 'listDraftRecoveries'
+      | 'archiveDraft',
+    state?: State,
+    key?: string,
+    input?: DraftWrite,
+    copy?: DraftCopy,
+  ): Promise<unknown> {
     if (this.failure) return Promise.reject(this.failure);
     if (this.closing && operation !== 'close') return Promise.reject(new Error('存储已关闭'));
     return new Promise((resolve, reject) => {
       const id = ++this.serial;
       this.pending.set(id, { resolve, reject });
       try {
-        this.worker.postMessage({ id, operation, state });
+        this.worker.postMessage({ id, operation, state, key, input, copy });
       } catch (error) {
         this.pending.delete(id);
         reject(error);
@@ -102,6 +122,18 @@ export class WorkerStateRepository implements StateRepository {
   }
   async save(state: State) {
     await this.request('save', state);
+  }
+  async archiveDraft(key: string, input: DraftCopy) {
+    await this.request('archiveDraft', undefined, key, undefined, input);
+  }
+  async listDraftRecoveries(key: string) {
+    return (await this.request('listDraftRecoveries', undefined, key)) as DraftRecovery[];
+  }
+  async readDraft(key: string) {
+    return (await this.request('readDraft', undefined, key)) as DraftSnapshot;
+  }
+  async writeDraft(key: string, input: DraftWrite) {
+    return (await this.request('writeDraft', undefined, key, input)) as DraftResult;
   }
   close(): Promise<void> {
     if (!this.closing)

@@ -19,7 +19,7 @@ export const capabilitiesSchema = z.object({
     .max(4),
   storage: z.object({
     history: z.literal('sqlite'),
-    drafts: z.literal('browser-local'),
+    drafts: z.literal('server-sqlite'),
     keyPersistence: z.enum(['memory', 'persistent']),
     stateVersion: positiveInteger,
     databaseVersion: positiveInteger,

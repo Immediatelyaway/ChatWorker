@@ -1,6 +1,7 @@
 import { reactive } from 'vue';
 import type { Attachment } from '../../../../packages/shared/types';
-import { DRAFT_VERSION } from '../../../../packages/contracts/versions';
+import { SyncedDraftStore } from './synced-drafts';
+const DRAFT_VERSION = 1;
 import { CHAT_LIMITS } from '../../../../packages/contracts/limits';
 
 export interface Draft {
@@ -98,4 +99,8 @@ try {
 } catch {
   /* Fall back to memory. */
 }
-export const drafts = new DraftStore(storage);
+export const legacyDrafts = new DraftStore(storage);
+export const drafts = new SyncedDraftStore({
+  storage: typeof window !== 'undefined' ? (storage as Storage | undefined) : undefined,
+  legacy: (key) => legacyDrafts.snapshot(key),
+});

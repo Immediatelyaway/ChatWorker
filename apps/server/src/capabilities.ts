@@ -24,7 +24,7 @@ export function describeCapabilities(runtime: {
     protocols: ['demo', 'responses', 'openai', 'anthropic'],
     storage: {
       history: 'sqlite',
-      drafts: 'browser-local',
+      drafts: 'server-sqlite',
       keyPersistence: runtime.persistentKeys ? 'persistent' : 'memory',
       stateVersion: STATE_VERSION,
       databaseVersion: DATABASE_VERSION,
@@ -59,10 +59,9 @@ export function describeCapabilities(runtime: {
         detail: '导出会话备份，预览后导入独立副本；不包含密钥、模型配置和草稿。',
       },
       drafts: {
-        status: 'limited',
-        detail: runtime.desktop
-          ? '按会话保存文字与附件，同次启动内可刷新恢复；随机端口下暂不保证退出应用后恢复。'
-          : '按会话保存在当前浏览器地址的本地存储中；使用相同地址可恢复，清理浏览器数据会删除草稿。',
+        status: 'available',
+        detail:
+          '草稿保存到当前本机资料库，重启或端口变化后可恢复已保存内容；多窗口版本冲突会保留双方内容并提示处理。离线缓存仍受浏览器地址限制。',
       },
       workspaceFiles: {
         status: 'unavailable',

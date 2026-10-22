@@ -63,12 +63,13 @@ test('capabilities reflect Web and desktop runtime without leaking or changing l
       assert.equal(info.storage.keyPersistence, config.persistentKeys ? 'persistent' : 'memory');
       assert.equal(info.storage.stateVersion, runtime.store.state.schemaVersion);
       assert.equal(info.storage.history, 'sqlite');
-      assert.equal(info.storage.databaseVersion, 1);
+      assert.equal(info.storage.databaseVersion, 2);
       const backup = await fetch(origin + '/api/backups', {
         headers: { 'X-ChatWorker': '1' },
       }).then((r) => r.json());
       assert.equal(info.storage.backupVersion, backup.version);
-      assert.match(info.features.drafts.detail, config.desktop ? /退出应用/ : /相同地址/);
+      assert.equal(info.storage.drafts, 'server-sqlite');
+      assert.match(info.features.drafts.detail, /重启或端口变化/);
       assert.equal(info.execution.onDisconnect, 'cancel');
       assert.equal(info.execution.onRestart, 'mark-interrupted-failed');
       for (const privateValue of [
