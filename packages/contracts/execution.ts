@@ -1,3 +1,4 @@
+import { citationSchema } from './library.js';
 import { z } from 'zod';
 import { CHAT_LIMITS } from './limits.js';
 export const modelOptionsSchema = z
@@ -29,6 +30,7 @@ export const usageSchema = z.object({
   reasoningTokens: z.number().int().nonnegative().optional(),
 });
 export const executionSchema = z.object({
+  citations: z.array(citationSchema).max(6).optional(),
   events: z.array(executionEventSchema).max(100),
   reasoning: z.string().max(CHAT_LIMITS.responseCharacters).optional(),
   durationMs: z.number().nonnegative().optional(),

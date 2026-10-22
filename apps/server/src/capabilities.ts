@@ -56,7 +56,13 @@ export function describeCapabilities(runtime: {
       },
       backups: {
         status: 'available',
-        detail: '导出会话备份，预览后导入独立副本；不包含密钥、模型配置和草稿。',
+        detail:
+          '导出会话备份，预览后导入独立副本；不包含密钥、模型配置、草稿和空间资料；空间原文件可单独下载。',
+      },
+      library: {
+        status: 'limited',
+        detail:
+          '空间支持上传文本、PDF、DOCX，收藏历史附件和回复；开启参考后按词汇检索相关片段并显示来源。暂不支持扫描件 OCR、向量语义检索或外网搜索。',
       },
       drafts: {
         status: 'available',

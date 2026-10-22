@@ -1,3 +1,4 @@
+import type { Citation } from '../contracts/library.js';
 import type { ModelOptions } from './model-catalog.js';
 import type { Execution, ExecutionEvent, ModelUsage } from '../contracts/execution.js';
 export type Protocol = 'responses' | 'openai' | 'anthropic' | 'demo';
@@ -59,6 +60,7 @@ export interface State {
   preferences: Preferences;
 }
 export type StreamEvent =
+  | { type: 'citations'; citations: Citation[] }
   | { type: 'delta'; text: string }
   | { type: 'reasoning'; text: string }
   | { type: 'execution'; event: ExecutionEvent }

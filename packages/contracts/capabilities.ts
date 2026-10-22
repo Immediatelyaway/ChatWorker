@@ -38,6 +38,7 @@ export const capabilitiesSchema = z.object({
     branches: feature,
     backups: feature,
     drafts: feature,
+    library: feature.optional(),
     workspaceFiles: feature,
     terminal: feature,
     runRecovery: feature,

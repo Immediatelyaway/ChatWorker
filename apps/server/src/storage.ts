@@ -1,3 +1,4 @@
+import type { LibraryQuery } from '../../../packages/contracts/library.js';
 import type { DraftWrite, DraftCopy } from '../../../packages/contracts/drafts.js';
 import { type State } from '../../../packages/shared/types.js';
 import { WorkerStateRepository } from '../../../packages/storage/worker-repository.js';
@@ -74,6 +75,12 @@ export class Storage {
     const task = this.tail.then(operation);
     this.tail = task.catch(() => {});
     return task;
+  }
+  library<T>(query: LibraryQuery): Promise<T> {
+    return this.enqueue(async () => {
+      if (!this.repository.library) throw new Error('当前存储不支持空间');
+      return (await this.repository.library(query)) as T;
+    });
   }
   archiveDraft(key: string, input: DraftCopy) {
     return this.enqueue(() => this.repository.archiveDraft(key, input));

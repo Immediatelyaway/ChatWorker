@@ -12,6 +12,7 @@ const labels: Record<FeatureId, string> = {
   branches: '分支与重新生成',
   backups: '备份与导入',
   drafts: '输入草稿',
+  library: '空间与资料检索',
   workspaceFiles: '项目文件工具',
   terminal: '终端与测试执行',
   runRecovery: '任务断点恢复',
@@ -24,7 +25,10 @@ const groups = computed(() => {
   const entries = (Object.keys(labels) as FeatureId[]).map((id) => ({
     id,
     label: labels[id],
-    ...state.data!.features[id],
+    ...(state.data!.features[id] ?? {
+      status: 'unavailable' as const,
+      detail: '当前服务未提供此能力',
+    }),
   }));
   return [
     { title: '当前功能', items: entries.filter((item) => item.status !== 'unavailable') },

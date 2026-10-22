@@ -1,3 +1,5 @@
+import { executeLibrary, createLibraryTables } from './library-tables.js';
+import type { LibraryQuery } from '../contracts/library.js';
 import { DatabaseSync } from 'node:sqlite';
 import {
   mkdirSync,
@@ -76,7 +78,7 @@ function checkHeader(file: string) {
     closeSync(fd);
   }
   if (
-    ![1, 2, DATABASE_VERSION].includes(header.readUInt32BE(60)) ||
+    ![1, 2, 3, DATABASE_VERSION].includes(header.readUInt32BE(60)) ||
     header.readUInt32BE(68) !== APPLICATION_ID
   )
     throw new StorageError('DATABASE_VERSION', '数据库版本不受支持，已保留原文件，请使用兼容版本');
@@ -95,7 +97,7 @@ function openExisting(file: string, expectedIds: (string | undefined)[] = []) {
   });
   try {
     if (
-      ![1, 2, DATABASE_VERSION].includes(
+      ![1, 2, 3, DATABASE_VERSION].includes(
         Number(db.prepare('PRAGMA user_version').get()?.user_version),
       ) ||
       db.prepare('PRAGMA application_id').get()?.application_id !== APPLICATION_ID ||
@@ -129,9 +131,11 @@ function openExisting(file: string, expectedIds: (string | undefined)[] = []) {
         chmodSync(backup, 0o400);
         syncFile(backup);
         if (previousVersion === 1) createDraftTables(db);
-        db.exec(
-          'ALTER TABLE providers ADD COLUMN model_options_json TEXT; ALTER TABLE messages ADD COLUMN execution_json TEXT;',
-        );
+        if (previousVersion < 3)
+          db.exec(
+            'ALTER TABLE providers ADD COLUMN model_options_json TEXT; ALTER TABLE messages ADD COLUMN execution_json TEXT;',
+          );
+        createLibraryTables(db);
         db.exec('PRAGMA user_version = ' + DATABASE_VERSION);
         db.exec('COMMIT');
       } catch (error) {
@@ -139,6 +143,8 @@ function openExisting(file: string, expectedIds: (string | undefined)[] = []) {
         throw error;
       }
     }
+    db.prepare('SELECT id,text,original FROM library_documents LIMIT 0').all();
+    db.prepare('SELECT terms_json FROM library_chunks LIMIT 0').all();
     db.prepare('SELECT model_options_json FROM providers LIMIT 0').all();
     db.prepare('SELECT execution_json FROM messages LIMIT 0').all();
     db.prepare(
@@ -273,6 +279,10 @@ export class StateDatabase {
     }
   }
 
+  library(query: LibraryQuery) {
+    this.assertOpen();
+    return executeLibrary(this.db, query);
+  }
   load(): State {
     this.assertOpen();
     return readStateRows(this.db);

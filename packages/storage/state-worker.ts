@@ -1,3 +1,4 @@
+import type { LibraryQuery } from '../contracts/library.js';
 import { parentPort, workerData } from 'node:worker_threads';
 import { StateDatabase } from './state-database.js';
 import type { DraftWrite, DraftCopy } from '../contracts/drafts.js';
@@ -20,6 +21,7 @@ try {
     (request: {
       id: number;
       operation:
+        | 'library'
         | 'load'
         | 'save'
         | 'close'
@@ -28,13 +30,15 @@ try {
         | 'listDraftRecoveries'
         | 'archiveDraft';
       state?: State;
+      library?: LibraryQuery;
       key?: string;
       input?: DraftWrite;
       copy?: DraftCopy;
     }) => {
       try {
         let value;
-        if (request.operation === 'archiveDraft')
+        if (request.operation === 'library') value = database.library(request.library!);
+        else if (request.operation === 'archiveDraft')
           database.archiveDraft(request.key!, request.copy!);
         else if (request.operation === 'listDraftRecoveries')
           value = database.listDraftRecoveries(request.key!);

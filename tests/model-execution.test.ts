@@ -268,7 +268,7 @@ test('v2 upgrade preserves drafts and exact backup; a failed model schema upgrad
       const file = join(dir, 'state.sqlite');
       const db = new DatabaseSync(file);
       db.exec(
-        'ALTER TABLE messages DROP COLUMN execution_json; ALTER TABLE providers DROP COLUMN model_options_json; PRAGMA user_version=2;',
+        'ALTER TABLE messages DROP COLUMN execution_json; ALTER TABLE providers DROP COLUMN model_options_json; DROP TABLE library_chunks; DROP TABLE library_documents; PRAGMA user_version=2;',
       );
       if (fail) db.exec('ALTER TABLE messages ADD COLUMN execution_json TEXT;');
       db.close();

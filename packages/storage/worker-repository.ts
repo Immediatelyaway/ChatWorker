@@ -1,3 +1,4 @@
+import type { LibraryQuery } from '../contracts/library.js';
 import type {
   DraftWrite,
   DraftSnapshot,
@@ -92,6 +93,7 @@ export class WorkerStateRepository implements StateRepository {
 
   private request(
     operation:
+      | 'library'
       | 'load'
       | 'save'
       | 'close'
@@ -103,6 +105,7 @@ export class WorkerStateRepository implements StateRepository {
     key?: string,
     input?: DraftWrite,
     copy?: DraftCopy,
+    library?: LibraryQuery,
   ): Promise<unknown> {
     if (this.failure) return Promise.reject(this.failure);
     if (this.closing && operation !== 'close') return Promise.reject(new Error('存储已关闭'));
@@ -110,12 +113,15 @@ export class WorkerStateRepository implements StateRepository {
       const id = ++this.serial;
       this.pending.set(id, { resolve, reject });
       try {
-        this.worker.postMessage({ id, operation, state, key, input, copy });
+        this.worker.postMessage({ id, operation, state, key, input, copy, library });
       } catch (error) {
         this.pending.delete(id);
         reject(error);
       }
     });
+  }
+  library(query: LibraryQuery) {
+    return this.request('library', undefined, undefined, undefined, undefined, query);
   }
   load() {
     return this.request('load');

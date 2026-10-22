@@ -1,3 +1,4 @@
+import { createLibraryTables } from './library-tables.js';
 import { createDraftTables } from './draft-tables.js';
 import type { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
@@ -38,6 +39,7 @@ export function createStateTables(db: DatabaseSync, storeId: string = randomUUID
     CREATE TABLE preferences (singleton INTEGER PRIMARY KEY CHECK(singleton=1), theme TEXT NOT NULL, provider_id TEXT NOT NULL REFERENCES providers(id), model TEXT NOT NULL, system_prompt TEXT NOT NULL) STRICT;
   `);
   createDraftTables(db);
+  createLibraryTables(db);
   db.prepare('INSERT INTO metadata VALUES (?,?)').run('storeId', storeId);
   db.prepare('INSERT INTO metadata VALUES (?,?)').run('stateVersion', String(STATE_VERSION));
 }
