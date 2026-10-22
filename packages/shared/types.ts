@@ -1,3 +1,5 @@
+import type { ModelOptions } from './model-catalog.js';
+import type { Execution, ExecutionEvent, ModelUsage } from '../contracts/execution.js';
 export type Protocol = 'responses' | 'openai' | 'anthropic' | 'demo';
 export interface Provider {
   id: string;
@@ -6,6 +8,7 @@ export interface Provider {
   baseUrl: string;
   models: string[];
   configured?: boolean;
+  modelOptions?: Record<string, ModelOptions>;
 }
 export interface Attachment {
   name: string;
@@ -19,6 +22,7 @@ export interface Message {
   createdAt: string;
   status?: 'streaming' | 'completed' | 'cancelled' | 'failed';
   model?: string;
+  execution?: Execution;
 }
 export interface Activity {
   id: string;
@@ -56,6 +60,9 @@ export interface State {
 }
 export type StreamEvent =
   | { type: 'delta'; text: string }
+  | { type: 'reasoning'; text: string }
+  | { type: 'execution'; event: ExecutionEvent }
+  | { type: 'usage'; usage: ModelUsage }
   | { type: 'activity'; activity: Activity }
   | { type: 'done'; conversation: Conversation }
   | { type: 'error'; message: string; code?: 'persistence_failed' };
@@ -94,7 +101,7 @@ export const providerDefaults: Provider[] = [
     name: 'DeepSeek',
     protocol: 'openai',
     baseUrl: 'https://api.deepseek.com',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
   },
   { id: 'custom', name: '自定义接口', protocol: 'openai', baseUrl: '', models: [] },
 ];

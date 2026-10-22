@@ -45,6 +45,7 @@ import {
   CheckCheck,
   RotateCcw,
   Sparkles,
+  Info,
 } from 'lucide-vue-next';
 const props = defineProps<{ name: string; size?: number }>();
 const icons: Record<string, any> = {
@@ -92,6 +93,7 @@ const icons: Record<string, any> = {
   checks: CheckCheck,
   retry: RotateCcw,
   sparkles: Sparkles,
+  info: Info,
 };
 const icon = computed(() => icons[props.name] ?? MessageSquare);
 </script>

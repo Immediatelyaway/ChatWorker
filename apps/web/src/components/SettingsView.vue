@@ -15,8 +15,11 @@ import {
   deleteConversation,
   openConversation,
 } from '../composables/workspace';
+import { deepseekModels } from '../../../../packages/shared/model-catalog';
 import type { Protocol } from '../../../../packages/shared/types';
-const selected = ref('openai'),
+const selected = ref(
+    state.preferences.providerId === 'demo' ? 'openai' : state.preferences.providerId,
+  ),
   baseUrl = ref(''),
   models = ref(''),
   protocol = ref<Protocol>('responses'),
@@ -24,7 +27,10 @@ const selected = ref('openai'),
   saving = ref(false),
   testing = ref(false),
   system = ref(''),
-  deleteId = ref('');
+  deleteId = ref(''),
+  testModel = ref(''),
+  testResult = ref(''),
+  testError = ref('');
 const chosen = computed(() => state.providers.find((p) => p.id === selected.value));
 watch(
   [selected, () => state.providers],
@@ -33,6 +39,11 @@ watch(
     models.value = chosen.value?.models.join(', ') ?? '';
     protocol.value = chosen.value?.protocol ?? 'openai';
     apiKey.value = '';
+    testModel.value = chosen.value?.models.includes(state.preferences.model)
+      ? state.preferences.model
+      : (chosen.value?.models[0] ?? '');
+    testResult.value = '';
+    testError.value = '';
   },
   { immediate: true, deep: true },
 );
@@ -65,11 +76,19 @@ async function save() {
 }
 async function test() {
   testing.value = true;
+  testResult.value = '';
+  testError.value = '';
+  const providerId = selected.value,
+    model = testModel.value;
   try {
-    await api(`/providers/${selected.value}/test`, 'POST', { model: chosen.value?.models[0] });
-    notify('连接成功，模型已返回响应');
+    const result = await api(`/providers/${providerId}/test`, 'POST', { model });
+    if (selected.value !== providerId) return;
+    testResult.value =
+      result.responseKind === 'reasoning'
+        ? `${model} 已返回思考内容，连接正常`
+        : `${model} 已返回正文，连接正常`;
   } catch (e) {
-    notify((e as Error).message);
+    if (selected.value === providerId) testError.value = (e as Error).message;
   } finally {
     testing.value = false;
   }
@@ -120,7 +139,7 @@ const titles: Record<string, string> = {
             >{{ p.name }}<span v-if="p.configured" class="status-dot"></span>
           </button>
         </div>
-        <form class="settings-card provider-form" @submit.prevent="save">
+        <form class="settings-card provider-form" novalidate @submit.prevent="save">
           <div class="card-title">
             <div>
               <h2>{{ chosen?.name }}</h2>
@@ -168,6 +187,67 @@ const titles: Record<string, string> = {
               required
             /><small>按供应商控制台填写；模型可用性由你的 API 账户决定。</small></label
           >
+          <div v-if="selected === 'deepseek'" class="model-presets">
+            <div class="preset-heading">
+              <strong>DeepSeek 模型</strong><span>官方 ID · 可分别配置</span>
+            </div>
+            <button
+              v-for="model in deepseekModels"
+              :key="model.id"
+              type="button"
+              @click="
+                models = [
+                  ...new Set([
+                    ...models
+                      .split(',')
+                      .map((v) => v.trim())
+                      .filter(Boolean),
+                    model.id,
+                  ]),
+                ].join(', ')
+              "
+            >
+              <Icon name="sparkles" :size="18" /><span
+                ><strong>{{ model.name }}</strong
+                ><small>{{ model.id }} · {{ model.description }}</small></span
+              ><Icon
+                :name="
+                  models
+                    .split(',')
+                    .map((v) => v.trim())
+                    .includes(model.id)
+                    ? 'check'
+                    : 'plus'
+                "
+                :size="17"
+              />
+            </button>
+            <p>保存后，可在输入框的模型面板分别选择思考模式与强度。</p>
+            <a
+              href="https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
+              target="_blank"
+              rel="noreferrer"
+              >官方模型与价格说明 <Icon name="external" :size="12"
+            /></a>
+          </div>
+          <label v-if="chosen?.configured"
+            >要测试的已保存模型<select v-model="testModel" aria-label="要测试的已保存模型">
+              <option v-for="model in chosen.models" :key="model" :value="model">
+                {{ model }}
+              </option>
+            </select></label
+          >
+          <div v-if="testError" class="connection-result failed" role="alert">
+            <Icon name="info" :size="18" />
+            <div>
+              <strong>连接未完成</strong>
+              <p>{{ testError }}</p>
+              <small>测试的是已保存配置。修改模型或地址后，请先保存再测试。</small>
+            </div>
+          </div>
+          <div v-else-if="testResult" class="connection-result success" role="status">
+            <Icon name="check" :size="18" />{{ testResult }}
+          </div>
           <div class="form-actions">
             <button
               v-if="chosen?.configured"
@@ -180,7 +260,7 @@ const titles: Record<string, string> = {
             ><button
               type="button"
               class="secondary-button"
-              :disabled="!chosen?.configured || testing || saving"
+              :disabled="!chosen?.configured || !testModel || testing || saving"
               @click="test"
             >
               <Icon v-if="testing" name="loading" class="spin" :size="15" />{{

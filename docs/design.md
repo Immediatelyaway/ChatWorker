@@ -1,6 +1,6 @@
 # ChatWorker 完整设计文档
 
-文档版本：0.9，稳定草稿与多窗口冲突恢复（应用版本独立读取 package.json）
+文档版本：0.10，模型选项、连接诊断与执行详情（应用版本独立读取 package.json）
 
 更新：2026 年 10 月 22 日
 
@@ -16,23 +16,25 @@ ChatWorker 是一个个人 AI 工作空间。当前版本优先提供可运行�
 
 ### 功能状态
 
-| 能力                    | 状态与范围                                                 |
-| ----------------------- | ---------------------------------------------------------- |
-| Vue Web 工作台          | 已实现，自适应桌面与窄屏                                   |
-| Electron 桌面外壳       | 已实现，本地服务随应用启动和退出                           |
-| 多供应商配置            | 已实现，Responses、Chat Completions、Messages 三类协议     |
-| 流式聊天                | 已实现，文本增量、终态校验、停止与错误提示                 |
-| 项目                    | 已实现名称、说明、编辑、删除与会话移动；不绑定文件夹       |
-| 会话管理                | 已实现创建、搜索、重命名、归档、恢复、删除、分支和重新生成 |
-| 附件                    | 已实现文本和代码文件读取、上下文注入、详情预览             |
-| Markdown                | 已实现安全净化后的渲染、代码块、表格、回复复制             |
-| 数据保存                | 已实现 SQLite 事务、独立存储线程、目录锁与旧 JSON 迁移     |
-| 输入草稿                | 已实现资料库保存、版本比较、冲突副本与显式恢复             |
-| 导出                    | 已实现会话正文 Markdown 导出；原始附件不作为独立文件导出   |
-| 活动记录                | 已实现请求开始、附件加入、完成、停止、失败                 |
-| 外观设置                | 已实现浅色、深色、跟随系统                                 |
-| Agent 文件编辑与终端    | 未实现，界面明确说明工作模式当前只做文本协作               |
-| MCP、技能执行、多 Agent | 后续阶段，当前不伪装成可点击的成品功能                     |
+| 能力                    | 状态与范围                                                     |
+| ----------------------- | -------------------------------------------------------------- |
+| Vue Web 工作台          | 已实现，自适应桌面与窄屏                                       |
+| Electron 桌面外壳       | 已实现，本地服务随应用启动和退出                               |
+| 多供应商配置            | 已实现，Responses、Chat Completions、Messages 三类协议         |
+| 流式聊天                | 已实现，文本增量、终态校验、停止与错误提示                     |
+| 项目                    | 已实现名称、说明、编辑、删除与会话移动；不绑定文件夹           |
+| 会话管理                | 已实现创建、搜索、重命名、归档、恢复、删除、分支和重新生成     |
+| 附件                    | 已实现文本和代码文件读取、上下文注入、详情预览                 |
+| Markdown                | 已实现安全净化后的渲染、代码块、表格、回复复制                 |
+| 数据保存                | 已实现 SQLite 事务、独立存储线程、目录锁与旧 JSON 迁移         |
+| 输入草稿                | 已实现资料库保存、版本比较、冲突副本与显式恢复                 |
+| 导出                    | 已实现会话正文 Markdown 导出；原始附件不作为独立文件导出       |
+| 活动记录                | 已实现请求开始、附件加入、完成、停止、失败                     |
+| 执行详情                | 已实现上下文与请求阶段、模型思考、实测用量和耗时；尚无工具执行 |
+| 按模型配置              | 已实现官方 DeepSeek 已知模型的思考方式与强度独立保存           |
+| 外观设置                | 已实现浅色、深色、跟随系统                                     |
+| Agent 文件编辑与终端    | 未实现，界面明确说明工作模式当前只做文本协作                   |
+| MCP、技能执行、多 Agent | 后续阶段，当前不伪装成可点击的成品功能                         |
 
 ## 2 信息架构与交互
 
@@ -56,6 +58,8 @@ ChatWorker 是一个个人 AI 工作空间。当前版本优先提供可运行�
 采用中性浅灰背景、白色内容区、细边框、轻阴影和蓝色主强调色。主输入框圆角较大，其他卡片使用较小圆角，保持层次。用自有 W 标记呈现 ChatWorker，不复制第三方商标。
 
 深色主题通过 CSS 变量统一切换。小屏幕收起侧栏，顶部菜单提供新建、搜索和设置入口。输入支持 Enter 发送、Shift Enter 换行，中文输入法组合输入不会被 Enter 提前提交。全局提供 Command/Ctrl + K 搜索、Command/Ctrl + N 新会话和 Command/Ctrl + 逗号设置。
+
+表单控件统一字体、外观、下拉箭头、焦点和滑块样式，保留语义与键盘操作。模型面板挂到页面顶层，以按钮为锚点并限制在窗口范围，避免被聊天区裁剪；支持搜索、点击外部关闭、Escape 关闭并归还焦点。弹层/展开区使用短淡入与位移动画，系统要求减少动画时停用持续动效。
 
 ## 3 工程架构
 
@@ -109,9 +113,13 @@ flowchart TB
 
 Responses 使用 Bearer 凭据、instructions 和 input，识别 response.output_text.delta 与终态事件；请求设置 store=false。Messages 使用 x-api-key、anthropic-version、system、messages 及 max_tokens。兼容协议使用 Bearer 凭据和 chat/completions。
 
-适配器将各协议的文本增量统一为异步字符串流。SSE 解析器支持 UTF-8 字符跨字节分片、CRLF 分隔、注释忽略及多个 data 行；上游未正常发出终态时视为中断，不静默标记完成。服务错误不会原样转发供应商响应体，减少凭据或内部内容被错误回显的机会。
+适配器将各协议的输出统一为 connected、text、reasoning、usage、tool 类型事件，并保留仅文本的包装接口。当前 reasoning 接收 Chat Completions 的 reasoning_content；usage 读取事件顶层实际返回的 token 数，不估算费用，也不保证所有协议都有完整用量。SSE 解析器支持 UTF-8 字符跨字节分片、CRLF 分隔、注释忽略及多个 data 行；上游未正常发出终态时视为中断，不静默标记完成。
 
-供应商兼容接口不保证所有高级参数一致。当前只支持文本对话，没有多模态、工具调用、推理预算或成本统计参数。服务端没有偷偷改写模型 ID 或自动切换到其他供应商。
+供应商兼容接口不保证所有高级参数一致。官方 DeepSeek 域名、Chat Completions 协议且模型 ID 在已知名单时，发送 thinking 与 reasoning_effort；直接回答时省略 effort。模型目录默认 Flash/Pro，兼容已知 Flash 别名，保留用户已有列表。默认模式不强制 thinking，强度未设置时采用服务默认值。其他地址/模型不发送这些专有参数，也不偷偷改写模型 ID 或切换供应商。当前没有多模态、工具执行或费用统计。
+
+连接测试使用所选模型的已保存选项，收到第一段正文或 reasoning_content 就停止，20 秒无有效内容返回本机 504。上游非成功响应返回本机 502，并单独提供 upstreamStatus、category 和经过允许列表过滤的 parameter。错误体最多读取 8 KiB，只转换为固定中文诊断，不回显原始响应体或用户输入。收到响应头但没有有效内容不算成功。HTTP 400 不能直接等同于错误模型 ID；需要区分上游参数拒绝与客户端/本机错误。
+
+参数与执行详情的兼容性决定见 [ADR-0004](adr/0004-model-options-and-execution.md)，DeepSeek 依据为[思考模式](https://api-docs.deepseek.com/zh-cn/guides/thinking_mode/)及[错误码](https://api-docs.deepseek.com/zh-cn/quick_start/error_codes/)。
 
 官方协议依据：[OpenAI 流式响应](https://developers.openai.com/api/docs/guides/streaming-responses)、[Anthropic Messages](https://platform.claude.com/docs/en/api/messages/create)、[Gemini 兼容接口](https://ai.google.dev/gemini-api/docs/openai)、[DeepSeek API](https://api-docs.deepseek.com/)。
 
@@ -133,19 +141,21 @@ Responses 使用 Bearer 凭据、instructions 和 input，识别 response.output
 
 ## 6 数据结构与存储
 
-| 实体         | 主要字段                                                                         |
-| ------------ | -------------------------------------------------------------------------------- |
-| Project      | id、name、description                                                            |
-| Conversation | id、title、projectId、mode、messages、activities、createdAt、updatedAt、archived |
-| Message      | id、role、content、attachments、createdAt、status、model                         |
-| Attachment   | name、content                                                                    |
-| Activity     | id、label、at                                                                    |
-| Provider     | id、name、protocol、baseUrl、models；返回时计算 configured                       |
-| Preferences  | theme、providerId、model、systemPrompt                                           |
+| 实体         | 主要字段                                                                              |
+| ------------ | ------------------------------------------------------------------------------------- |
+| Project      | id、name、description                                                                 |
+| Conversation | id、title、projectId、mode、messages、activities、createdAt、updatedAt、archived      |
+| Message      | id、role、content、attachments、createdAt、status、model、execution（可选）           |
+| Attachment   | name、content                                                                         |
+| Activity     | id、label、at                                                                         |
+| Provider     | id、name、protocol、baseUrl、models、modelOptions（按模型 ID）；返回时计算 configured |
+| Preferences  | theme、providerId、model、systemPrompt                                                |
 
 Web 数据默认位于工作目录 `.chatworker/state.sqlite`。桌面数据默认位于 Electron `app.getPath('userData')`，可由专用环境变量覆盖。两端使用相同数据库格式，但默认是独立存储，不是云同步。
 
-数据库版本为 2，草稿格式为 2，状态格式与 JSON 备份仍为 1，能力契约为 3。数据库持有跨重启稳定的 `storeId`，启动检查版本、目录标识、完整性和业务结构。旧 JSON（含无版本数据）通过显式离线入口或桌面升级提示迁移；先备份并核验 SHA-256，再事务导入、完整比对、持久化并切换。保留旧文件，损坏与未来版本拒绝加载，不隐式初始化空库。
+数据库版本为 3，草稿格式为 2，状态格式与 JSON 备份仍为 1，能力契约为 3。v1/v2 数据库在持锁状态生成原版本字节备份，再将新增表/列与版本号一起提交，失败回滚。数据库持有跨重启稳定的 `storeId`，启动检查版本、目录标识、完整性和业务结构。旧 JSON（含无版本数据）通过显式离线入口或桌面升级提示迁移；先备份并核验 SHA-256，再事务导入、完整比对、持久化并切换。保留旧文件，损坏与未来版本拒绝加载，不隐式初始化空库。
+
+execution 包含阶段事件、模型思考、用量、耗时及请求选项快照。思考与正文分开，均在终态保存；不会回填下一轮纯文本对话上下文。事件最多 100 条，详情每项最多 2,000 字符，思考最多 200,000 字符。JSON 会话备份包含可选 execution，但不包含供应商 modelOptions；旧客户端可能丢弃不认识的新增字段。执行记录不是持久 Run 日志，崩溃时可能丢失当次尚未保存的记录，尚无重放或工具副作用恢复。
 
 持久化在独立线程使用 SQLite 关系表和事务，主服务串行处理状态变更，提交成功后才发布新内存快照。跨进程目录锁拒绝重复打开，进程退出由系统释放。历史与配置仍逐次重写关系记录，查询加载全量状态，属于小规模单机过渡实现；消息分页和历史增量仓储尚未实现。草稿单独进行增量读写和 revision 校验，不被普通历史保存覆盖。新建目录与文件使用私有权限，不能据此声称 Windows ACL 已验收。
 
@@ -168,10 +178,12 @@ Web 数据默认位于工作目录 `.chatworker/state.sqlite`。桌面数据默�
 | POST /api/conversations/:id/cancel   | 停止当前请求                                           |
 | PATCH /api/preferences               | 更新主题、默认模型、系统指令                           |
 | PUT /api/providers/:id               | 更新 baseUrl、models、protocol 和可选 apiKey           |
+| GET /api/providers/:id               | 只返回供应商配置与 configured，不包含会话或 Key        |
+| PUT /api/providers/:id/model-options | model、options，更新该模型选项                         |
 | POST /api/providers/:id/test         | model，测试已保存配置                                  |
 | DELETE /api/providers/:id/key        | 删除应用保存的 Key，环境变量来源不受影响               |
 
-SSE 事件为 delta、activity、done、error。done 携带最终会话记录；前端用其替换乐观显示，避免本地拼接状态与服务端不一致。当前没有跨客户端幂等请求 ID，异常重试前应查看会话，不自动重发用户操作。
+SSE 事件为 delta、reasoning、usage、execution、activity、done、error。execution 通过事件 ID 更新阶段状态，usage 合并已返回字段；done 携带最终会话记录，前端用其替换乐观显示。遇到不支持的工具请求，记录「未执行」并结束为失败，不将其描述为查询或文件操作已经完成。当前没有跨客户端幂等请求 ID，异常重试前应查看会话，不自动重发用户操作。
 
 ## 8 凭据与执行边界
 

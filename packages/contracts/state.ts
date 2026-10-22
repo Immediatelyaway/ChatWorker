@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { executionSchema, modelOptionsSchema } from './execution.js';
 import { providerDefaults, type State } from '../shared/types.js';
 import { STATE_VERSION } from './versions.js';
 import { CHAT_LIMITS } from './limits.js';
@@ -23,6 +24,7 @@ const message = z.object({
   createdAt: date,
   status: z.enum(['streaming', 'completed', 'cancelled', 'failed']).optional(),
   model: z.string().max(300).optional(),
+  execution: executionSchema.optional(),
 });
 const conversation = z.object({
   id,
@@ -60,6 +62,7 @@ const stateSchema = z.object({
       protocol: z.enum(['demo', 'responses', 'openai', 'anthropic']),
       baseUrl: z.string(),
       models: z.array(z.string().min(1).max(150)),
+      modelOptions: z.record(z.string().min(1).max(150), modelOptionsSchema).optional(),
     }),
   ),
   preferences: z.object({

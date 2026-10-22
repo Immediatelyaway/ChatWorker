@@ -148,7 +148,9 @@ test('v1 SQLite upgrades with an exact backup and stable identity; failed schema
       await original.close();
       const file = join(directory, 'state.sqlite');
       const old = new DatabaseSync(file);
-      old.exec('DROP TABLE drafts; DROP TABLE draft_recoveries; PRAGMA user_version=1;');
+      old.exec(
+        'DROP TABLE drafts; DROP TABLE draft_recoveries; ALTER TABLE providers DROP COLUMN model_options_json; ALTER TABLE messages DROP COLUMN execution_json; PRAGMA user_version=1;',
+      );
       if (fail) old.exec('CREATE TABLE drafts (conflict TEXT);');
       old.close();
       const bytes = readFileSync(file);

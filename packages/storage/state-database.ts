@@ -76,7 +76,7 @@ function checkHeader(file: string) {
     closeSync(fd);
   }
   if (
-    ![1, DATABASE_VERSION].includes(header.readUInt32BE(60)) ||
+    ![1, 2, DATABASE_VERSION].includes(header.readUInt32BE(60)) ||
     header.readUInt32BE(68) !== APPLICATION_ID
   )
     throw new StorageError('DATABASE_VERSION', '数据库版本不受支持，已保留原文件，请使用兼容版本');
@@ -95,7 +95,7 @@ function openExisting(file: string, expectedIds: (string | undefined)[] = []) {
   });
   try {
     if (
-      ![1, DATABASE_VERSION].includes(
+      ![1, 2, DATABASE_VERSION].includes(
         Number(db.prepare('PRAGMA user_version').get()?.user_version),
       ) ||
       db.prepare('PRAGMA application_id').get()?.application_id !== APPLICATION_ID ||
@@ -115,19 +115,23 @@ function openExisting(file: string, expectedIds: (string | undefined)[] = []) {
     if (expectedIds.some((id) => id && id !== storeId))
       throw new StorageError('STORE_ID_MISMATCH', '数据库与资料目录标识不一致，请先检查备份');
     db.exec('PRAGMA synchronous=FULL');
-    if (db.prepare('PRAGMA user_version').get()?.user_version === 1) {
+    const previousVersion = Number(db.prepare('PRAGMA user_version').get()?.user_version);
+    if (previousVersion < DATABASE_VERSION) {
       // The directory lock is held and hot journals have recovered. Hold a DB write lock too.
       db.exec('BEGIN IMMEDIATE');
       try {
         const bytes = readFileSync(file);
-        const backup = file + '.backup-v1-' + hash(bytes);
+        const backup = file + '.backup-v' + previousVersion + '-' + hash(bytes);
         if (requireRegularFile(backup)) {
           if (hash(readFileSync(backup)) !== hash(bytes))
             throw new StorageError('BACKUP_CORRUPT', '数据库升级备份校验失败');
         } else atomicWrite(backup, bytes);
         chmodSync(backup, 0o400);
         syncFile(backup);
-        createDraftTables(db);
+        if (previousVersion === 1) createDraftTables(db);
+        db.exec(
+          'ALTER TABLE providers ADD COLUMN model_options_json TEXT; ALTER TABLE messages ADD COLUMN execution_json TEXT;',
+        );
         db.exec('PRAGMA user_version = ' + DATABASE_VERSION);
         db.exec('COMMIT');
       } catch (error) {
@@ -135,6 +139,8 @@ function openExisting(file: string, expectedIds: (string | undefined)[] = []) {
         throw error;
       }
     }
+    db.prepare('SELECT model_options_json FROM providers LIMIT 0').all();
+    db.prepare('SELECT execution_json FROM messages LIMIT 0').all();
     db.prepare(
       'SELECT owner_key,revision,text,attachments_json,updated_at FROM drafts LIMIT 0',
     ).all();

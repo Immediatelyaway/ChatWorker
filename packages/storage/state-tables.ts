@@ -20,7 +20,7 @@ export function createStateTables(db: DatabaseSync, storeId: string = randomUUID
     ) STRICT;
     CREATE TABLE messages (
       conversation_id TEXT NOT NULL REFERENCES conversations(id), id TEXT NOT NULL, position INTEGER NOT NULL,
-      role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL, status TEXT, model TEXT,
+      role TEXT NOT NULL, content TEXT NOT NULL, created_at TEXT NOT NULL, status TEXT, model TEXT, execution_json TEXT,
       has_attachments INTEGER NOT NULL CHECK(has_attachments IN (0,1)),
       PRIMARY KEY(conversation_id,id), UNIQUE(conversation_id,position)
     ) STRICT;
@@ -33,7 +33,7 @@ export function createStateTables(db: DatabaseSync, storeId: string = randomUUID
       conversation_id TEXT NOT NULL REFERENCES conversations(id), position INTEGER NOT NULL,
       id TEXT NOT NULL, label TEXT NOT NULL, at TEXT NOT NULL, PRIMARY KEY(conversation_id,position)
     ) STRICT;
-    CREATE TABLE providers (id TEXT PRIMARY KEY, position INTEGER NOT NULL UNIQUE, name TEXT NOT NULL, protocol TEXT NOT NULL, base_url TEXT NOT NULL) STRICT;
+    CREATE TABLE providers (id TEXT PRIMARY KEY, position INTEGER NOT NULL UNIQUE, name TEXT NOT NULL, protocol TEXT NOT NULL, base_url TEXT NOT NULL, model_options_json TEXT) STRICT;
     CREATE TABLE provider_models (provider_id TEXT NOT NULL REFERENCES providers(id), position INTEGER NOT NULL, name TEXT NOT NULL, PRIMARY KEY(provider_id,position)) STRICT;
     CREATE TABLE preferences (singleton INTEGER PRIMARY KEY CHECK(singleton=1), theme TEXT NOT NULL, provider_id TEXT NOT NULL REFERENCES providers(id), model TEXT NOT NULL, system_prompt TEXT NOT NULL) STRICT;
   `);
@@ -50,10 +50,14 @@ export function writeStateRows(db: DatabaseSync, input: State) {
   );
   const project = db.prepare('INSERT INTO projects VALUES (?,?,?,?)');
   const conversation = db.prepare('INSERT INTO conversations VALUES (?,?,?,?,?,?,?,?)');
-  const message = db.prepare('INSERT INTO messages VALUES (?,?,?,?,?,?,?,?,?)');
+  const message = db.prepare(
+    'INSERT INTO messages (conversation_id,id,position,role,content,created_at,status,model,execution_json,has_attachments) VALUES (?,?,?,?,?,?,?,?,?,?)',
+  );
   const attachment = db.prepare('INSERT INTO attachments VALUES (?,?,?,?,?)');
   const activity = db.prepare('INSERT INTO activities VALUES (?,?,?,?,?)');
-  const provider = db.prepare('INSERT INTO providers VALUES (?,?,?,?,?)');
+  const provider = db.prepare(
+    'INSERT INTO providers (id,position,name,protocol,base_url,model_options_json) VALUES (?,?,?,?,?,?)',
+  );
   const model = db.prepare('INSERT INTO provider_models VALUES (?,?,?)');
   state.projects.forEach((p, i) => project.run(p.id, i, p.name, p.description));
   state.conversations.forEach((c, i) => {
@@ -77,6 +81,7 @@ export function writeStateRows(db: DatabaseSync, input: State) {
         m.createdAt,
         m.status ?? null,
         m.model ?? null,
+        m.execution ? JSON.stringify(m.execution) : null,
         Number(m.attachments !== undefined),
       );
       m.attachments?.forEach((a, k) => attachment.run(c.id, m.id, k, a.name, a.content));
@@ -84,7 +89,14 @@ export function writeStateRows(db: DatabaseSync, input: State) {
     c.activities.forEach((a, j) => activity.run(c.id, j, a.id, a.label, a.at));
   });
   state.providers.forEach((p, i) => {
-    provider.run(p.id, i, p.name, p.protocol, p.baseUrl);
+    provider.run(
+      p.id,
+      i,
+      p.name,
+      p.protocol,
+      p.baseUrl,
+      p.modelOptions ? JSON.stringify(p.modelOptions) : null,
+    );
     p.models.forEach((name, j) => model.run(p.id, j, name));
   });
   // Keep revision tombstones so stale clients cannot recreate deleted context drafts.
@@ -148,6 +160,7 @@ export function readStateRows(db: DatabaseSync): State {
           createdAt: m.created_at,
           ...(m.status === null ? {} : { status: m.status }),
           ...(m.model === null ? {} : { model: m.model }),
+          ...(m.execution_json == null ? {} : { execution: JSON.parse(String(m.execution_json)) }),
           ...(m.has_attachments === 1
             ? {
                 attachments: db
@@ -170,6 +183,9 @@ export function readStateRows(db: DatabaseSync): State {
       name: p.name,
       protocol: p.protocol,
       baseUrl: p.base_url,
+      ...(p.model_options_json == null
+        ? {}
+        : { modelOptions: JSON.parse(String(p.model_options_json)) }),
       models: db
         .prepare('SELECT name FROM provider_models WHERE provider_id=? ORDER BY position')
         .all(p.id!)

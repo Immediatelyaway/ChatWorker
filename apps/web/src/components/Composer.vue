@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import Icon from './Icon.vue';
-import { ui, state, provider, send, cancel, preference, notify } from '../composables/workspace';
+import ModelPicker from './ModelPicker.vue';
+import { ui, state, send, cancel, notify } from '../composables/workspace';
 import { drafts, draftKey } from '../composables/drafts';
 import type { DraftReceipt } from '../composables/synced-drafts';
 import { CHAT_LIMITS } from '../../../../packages/contracts/limits';
@@ -68,9 +69,7 @@ const text = computed({
   set: (value: string) => drafts.set(key.value, { ...draft.value, text: value }),
 });
 const attachments = computed(() => draft.value.attachments);
-const input = ref<HTMLInputElement>(),
-  picker = ref(false);
-const available = computed(() => state.providers.filter((p) => p.configured));
+const input = ref<HTMLInputElement>();
 async function submit() {
   if (!text.value.trim() || ui.busyId || ui.preparing || preparingDraft.value || entry.value.remote)
     return;
@@ -156,10 +155,6 @@ async function files(e: Event) {
   }
   if (input.value) input.value.value = '';
 }
-function pick(id: string, model: string) {
-  void preference({ providerId: id, model });
-  picker.value = false;
-}
 function fill(value: string) {
   text.value = value;
 }
@@ -199,36 +194,7 @@ defineExpose({ fill });
             ui.mode === 'work' ? '一起想清楚，逐步完成' : '自由探索'
           }}</span
         >
-        <div class="model-picker">
-          <button class="model-trigger" @click="picker = !picker" aria-label="选择模型">
-            <span class="model-dot"></span
-            >{{ provider?.id === 'demo' ? '本地演示' : state.preferences.model || '选择模型'
-            }}<Icon name="down" :size="13" />
-          </button>
-          <div v-if="picker" class="popover model-menu">
-            <p class="section-label">选择模型</p>
-            <template v-for="p in available" :key="p.id"
-              ><button v-for="m in p.models" :key="m" @click="pick(p.id, m)">
-                <span
-                  ><small>{{ p.name }}</small
-                  >{{ m }}</span
-                ><Icon
-                  v-if="state.preferences.providerId === p.id && state.preferences.model === m"
-                  name="check"
-                  :size="16"
-                /></button></template
-            ><button
-              class="configure-link"
-              @click="
-                ui.page = 'settings';
-                ui.setting = 'providers';
-                picker = false;
-              "
-            >
-              <Icon name="plus" :size="16" />添加模型服务
-            </button>
-          </div>
-        </div>
+        <ModelPicker />
         <button
           v-if="ui.busyId && !ui.preparing"
           class="send-button stop"

@@ -198,10 +198,20 @@ export async function send(
     });
     if (local.title === '新会话') local.title = content.slice(0, 32);
     const answer = local.messages.at(-1)!;
+    answer.execution = { events: [] };
     let finished = false;
     for await (const raw of parseSSE(response.body!)) {
       const event = JSON.parse(raw) as StreamEvent;
       if (event.type === 'delta') answer.content += event.text;
+      if (event.type === 'reasoning')
+        answer.execution!.reasoning = (answer.execution!.reasoning ?? '') + event.text;
+      if (event.type === 'usage')
+        answer.execution!.usage = { ...answer.execution!.usage, ...event.usage };
+      if (event.type === 'execution') {
+        const existing = answer.execution!.events.findIndex((item) => item.id === event.event.id);
+        if (existing < 0) answer.execution!.events.push(event.event);
+        else answer.execution!.events[existing] = event.event;
+      }
       if (event.type === 'activity') local.activities.push(event.activity);
       if (event.type === 'error') {
         ui.error = event.message;
@@ -286,4 +296,17 @@ export async function saveProvider(id: string, value: Partial<Provider> & { apiK
   const p = await api<Provider>('/providers/' + id, 'PUT', value);
   state.providers[state.providers.findIndex((x) => x.id === id)] = p;
   return p;
+}
+
+export async function saveModelOptions(
+  providerId: string,
+  model: string,
+  options: import('../../../../packages/shared/model-catalog').ModelOptions,
+) {
+  const updated = await api<Provider>(`/providers/${providerId}/model-options`, 'PUT', {
+    model,
+    options,
+  });
+  const index = state.providers.findIndex((p) => p.id === providerId);
+  if (index >= 0) state.providers[index] = updated;
 }

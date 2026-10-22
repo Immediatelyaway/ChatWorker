@@ -63,7 +63,7 @@ test('capabilities reflect Web and desktop runtime without leaking or changing l
       assert.equal(info.storage.keyPersistence, config.persistentKeys ? 'persistent' : 'memory');
       assert.equal(info.storage.stateVersion, runtime.store.state.schemaVersion);
       assert.equal(info.storage.history, 'sqlite');
-      assert.equal(info.storage.databaseVersion, 2);
+      assert.equal(info.storage.databaseVersion, 3);
       const backup = await fetch(origin + '/api/backups', {
         headers: { 'X-ChatWorker': '1' },
       }).then((r) => r.json());

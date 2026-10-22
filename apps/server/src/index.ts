@@ -4,8 +4,10 @@ import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { draftRoutes } from './drafts.js';
+import { modelOptionsSchema, type ExecutionEvent } from '../../../packages/contracts/execution.js';
+import { supportsThinking, modelOptions } from '../../../packages/shared/model-catalog.js';
 import { Storage, memorySecrets, type SecretStore } from './storage.js';
-import { streamModel } from '../../../packages/providers/index.js';
+import { streamModelEvents, ProviderError } from '../../../packages/providers/index.js';
 import {
   providerDefaults,
   type Conversation,
@@ -278,6 +280,29 @@ export async function startServer(
     });
     res.json(preferences);
   });
+  app.get('/api/providers/:id', (req, res) => {
+    const p = store.state.providers.find((item) => item.id === req.params.id);
+    if (!p) return res.sendStatus(404);
+    res.json({ ...p, configured: p.protocol === 'demo' || !!key(p.id) });
+  });
+  app.put('/api/providers/:id/model-options', async (req, res) => {
+    const input = z
+      .object({ model: z.string().min(1).max(150), options: modelOptionsSchema })
+      .strict()
+      .parse(req.body);
+    const p = store.state.providers.find((item) => item.id === req.params.id);
+    if (!p || !p.models.includes(input.model))
+      return res.status(400).json({ error: '请先保存这个模型 ID' });
+    if (providerEdits.has(p.id)) return res.status(409).json({ error: '模型配置正在保存' });
+    if (!supportsThinking(p, input.model) && Object.keys(input.options).length)
+      return res.status(400).json({ error: '此接口和模型尚未验证思考参数，请使用默认设置' });
+    const updated = await store.update((state) => {
+      const current = state.providers.find((item) => item.id === p.id)!;
+      current.modelOptions = { ...current.modelOptions, [input.model]: input.options };
+      return current;
+    });
+    res.json({ ...updated, configured: !!key(p.id) });
+  });
   app.put('/api/providers/:id', async (req, res) => {
     const p = store.state.providers.find((p) => p.id === req.params.id && p.id !== 'demo');
     if (!p) return res.sendStatus(404);
@@ -342,7 +367,8 @@ export async function startServer(
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 20_000);
     try {
-      for await (const _ of streamModel({
+      let responseKind = '';
+      for await (const event of streamModelEvents({
         provider: p,
         key: key(p.id),
         model: input.model,
@@ -350,11 +376,24 @@ export async function startServer(
         system: 'Reply briefly.',
         signal: ctrl.signal,
       })) {
-        break;
+        if (event.type === 'text' || event.type === 'reasoning') {
+          responseKind = event.type;
+          break;
+        }
       }
-      res.json({ ok: true });
+      if (!responseKind) throw new Error('模型流已结束，但未返回文字或思考内容');
+      res.json({ ok: true, responseKind });
     } catch (e) {
-      res.status(400).json({ error: e instanceof Error ? e.message : '连接测试失败' });
+      res.status(ctrl.signal.aborted ? 504 : 502).json({
+        error: ctrl.signal.aborted
+          ? '连接测试超时（20 秒），可稍后重试或关闭思考模式'
+          : e instanceof Error
+            ? e.message
+            : '连接测试失败',
+        ...(e instanceof ProviderError
+          ? { upstreamStatus: e.status, category: e.category, parameter: e.parameter }
+          : {}),
+      });
     } finally {
       clearTimeout(timer);
       ctrl.abort();
@@ -395,6 +434,7 @@ export async function startServer(
     if (!provider) return res.status(400).json({ error: '模型服务不存在' });
     if (providerEdits.has(provider.id)) return res.status(409).json({ error: '模型配置正在保存' });
     const providerKey = key(provider.id);
+    const selectedOptions = { ...modelOptions(provider, input.model) };
     if (provider.protocol !== 'demo' && !providerKey)
       return res.status(400).json({ error: '请先在设置中填写 API Key' });
     const history = (reuseLastUser ? c.messages.slice(0, -1) : c.messages)
@@ -459,11 +499,13 @@ export async function startServer(
           createdAt: now(),
           status: 'streaming',
           model: `${provider.name} / ${input.model}`,
+          execution: { events: [], options: selectedOptions },
         });
         current.updatedAt = now();
         return current;
       });
       const answer = c.messages.at(-1)!;
+      const startedAt = Date.now();
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache');
       res.setHeader('Connection', 'keep-alive');
@@ -476,26 +518,104 @@ export async function startServer(
         c!.activities.push(item);
         emit({ type: 'activity', activity: item });
       };
+      const trace = (
+        kind: ExecutionEvent['kind'],
+        label: string,
+        detail?: string,
+        status: ExecutionEvent['status'] = 'completed',
+      ) => {
+        const event: ExecutionEvent = {
+          id: randomUUID(),
+          kind,
+          label,
+          at: now(),
+          status,
+          ...(detail ? { detail: detail.slice(0, 2000) } : {}),
+        };
+        answer.execution!.events.push(event);
+        emit({ type: 'execution', event });
+        return event;
+      };
+      const finishPhase = (status: 'completed' | 'failed' = 'completed') => {
+        for (const event of answer.execution!.events)
+          if (event.status === 'running') {
+            event.status = status;
+            if (status === 'completed')
+              event.label = event.label
+                .replace(/^正在连接 /, '已连接 ')
+                .replace('正在启动本地演示', '本地演示已启动')
+                .replace('正在接收模型思考', '已接收模型思考')
+                .replace('正在生成回答', '已生成回答');
+            emit({ type: 'execution', event });
+          }
+      };
+      let thinking = false,
+        responding = false;
       try {
         ctrl.signal.throwIfAborted();
+        trace(
+          'context',
+          '已整理本次上下文',
+          `${history.length} 条历史消息 · ${input.attachments.length} 个文本附件` +
+            (input.attachments.length
+              ? '\n' + input.attachments.map((a) => a.name).join('、')
+              : ''),
+        );
+        trace(
+          'connection',
+          provider.protocol === 'demo' ? '正在启动本地演示' : `正在连接 ${provider.name}`,
+          input.model,
+          'running',
+        );
         activity(
           provider.protocol === 'demo' ? '开始本地演示 · 未调用模型' : `正在连接 ${provider.name}`,
         );
         if (input.attachments.length) activity(`已加入 ${input.attachments.length} 个文本附件`);
-        for await (const delta of streamModel({
+        for await (const event of streamModelEvents({
           provider,
           key: providerKey,
           model: input.model,
+          options: selectedOptions,
           messages: [...history, { role: 'user', content: userContent }],
           system,
           signal: ctrl.signal,
         })) {
           ctrl.signal.throwIfAborted();
-          if (answer.content.length + delta.length > CHAT_LIMITS.responseCharacters)
-            throw new Error('回复达到大小限制');
-          answer.content += delta;
-          emit({ type: 'delta', text: delta });
+          if (event.type === 'connected') finishPhase();
+          if (event.type === 'reasoning') {
+            if (!thinking) {
+              finishPhase();
+              trace('reasoning', '正在接收模型思考', '来自模型服务的输出', 'running');
+              thinking = true;
+            }
+            if (
+              (answer.execution!.reasoning?.length ?? 0) + event.text.length >
+              CHAT_LIMITS.responseCharacters
+            )
+              throw new Error('模型思考内容达到大小限制');
+            answer.execution!.reasoning = (answer.execution!.reasoning ?? '') + event.text;
+            emit({ type: 'reasoning', text: event.text });
+          }
+          if (event.type === 'text') {
+            if (!responding) {
+              finishPhase();
+              trace('response', '正在生成回答', undefined, 'running');
+              responding = true;
+            }
+            if (answer.content.length + event.text.length > CHAT_LIMITS.responseCharacters)
+              throw new Error('回复达到大小限制');
+            answer.content += event.text;
+            emit({ type: 'delta', text: event.text });
+          }
+          if (event.type === 'usage') {
+            answer.execution!.usage = { ...answer.execution!.usage, ...event.usage };
+            emit({ type: 'usage', usage: event.usage });
+          }
+          if (event.type === 'tool')
+            trace('tool', '工具请求未执行', event.name + ' · 当前未接入工具运行器', 'blocked');
         }
+        finishPhase();
+        trace('completion', '模型输出结束');
         answer.status = 'completed';
         activity('回复已生成，正在保存');
       } catch (error) {
@@ -508,9 +628,17 @@ export async function startServer(
             : error instanceof Error
               ? error.message
               : '生成失败';
+        finishPhase('failed');
+        trace(
+          'error',
+          message.slice(0, 200),
+          undefined,
+          answer.status === 'cancelled' ? 'blocked' : 'failed',
+        );
         activity(message);
         if (answer.status === 'failed') emit({ type: 'error', message });
       }
+      answer.execution!.durationMs = Date.now() - startedAt;
       c.updatedAt = now();
       try {
         const finished = c;

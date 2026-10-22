@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import Icon from './Icon.vue';
 import Composer from './Composer.vue';
+import ExecutionDetails from './ExecutionDetails.vue';
 import { ui, current, notify, forkConversation, send } from '../composables/workspace';
 const composer = ref<InstanceType<typeof Composer>>(),
   scroller = ref<HTMLElement>();
@@ -91,6 +92,7 @@ watch(
               </div>
             </div>
             <div v-else class="assistant-body">
+              <ExecutionDetails :message="m" />
               <div v-if="m.content" class="markdown" v-html="markdown(m.content)"></div>
               <div v-else-if="m.status === 'streaming'" class="thinking">
                 <span></span><span></span><span></span>
