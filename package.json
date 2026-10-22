@@ -12,6 +12,7 @@
     "desktop": "npm run build && electron .",
     "desktop:pack": "npm run build && node scripts/package-desktop.mjs",
     "test": "tsx --test tests/*.test.ts",
+    "verify:storage": "node scripts/verify-storage.mjs",
     "typecheck": "vue-tsc --noEmit",
     "format": "prettier --write apps packages tests docs README.md"
   },

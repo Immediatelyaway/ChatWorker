@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["packages/storage/sqlite.ts", "tests/helpers/sqlite-contract.ts"]
+}

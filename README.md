@@ -4,7 +4,7 @@
 
 ## 快速启动
 
-环境：Node.js 22.12+、npm。首次运行需要下载依赖；真实模型请求需要自己的 API Key。
+开发与完整验证环境：Node.js 22.21.1+、npm。首次运行需要下载依赖；真实模型请求需要自己的 API Key。
 
 ```bash
 npm ci
@@ -74,6 +74,7 @@ apps/desktop/      Electron 生命周期与加密凭据
 packages/contracts/能力接口校验、独立格式版本与共用限制
 packages/shared/   跨端数据类型和供应商配置
 packages/providers/三类模型协议与 SSE 解析
+packages/storage/  JSON 快照接口与 SQLite 驱动试验
 tests/            协议、异常、取消、持久化等测试
 docs/             设计、验证与后续计划
 ```
@@ -84,6 +85,14 @@ npm test
 npm run build
 npm run format
 ```
+
+存储选型与桌面打包试验（已验证 Node 22.21.1 / macOS arm64，测试环境建议采用该版本或更新的兼容版本）：
+
+```bash
+npm run verify:storage
+```
+
+该命令在临时目录运行 Node、Electron 主进程和打包后的测试应用，结束后清理，不迁移现有会话。SQLite 尚未启用到聊天服务；选型、WAL 版本限制及下一步迁移条件见 [存储决策](docs/adr/0001-storage-and-sqlite.md)。
 
 当前已实现的行为见 [现有设计文档](docs/design.md) 与 [验证记录](docs/verification.md)。后续通用智能体的架构、源码依据、数据与接口契约、异常恢复、界面细节及分阶段验收见 [通用智能体整体设计蓝图](docs/agent-architecture-blueprint.md)；蓝图中的规划不代表现有能力。
 

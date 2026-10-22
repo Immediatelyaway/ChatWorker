@@ -1,6 +1,6 @@
-import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { type State } from '../../../packages/shared/types.js';
+import { JsonSnapshotRepository } from '../../../packages/storage/json-snapshot-repository.js';
+import type { SnapshotRepository } from '../../../packages/storage/snapshot-repository.js';
 import { decodeState, initialState } from './state-schema.js';
 export interface SecretStore {
   get(id: string): string;
@@ -19,14 +19,12 @@ export function memorySecrets(): SecretStore {
 }
 export class Storage {
   state: State;
-  private file: string;
-  constructor(dir: string) {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    this.file = join(dir, 'state.json');
+  private readonly repository: SnapshotRepository<State>;
+  constructor(source: string | SnapshotRepository<State>) {
+    this.repository = typeof source === 'string' ? new JsonSnapshotRepository(source) : source;
     // Parse before writing: corrupt or future-version data must remain untouched.
-    this.state = existsSync(this.file)
-      ? decodeState(JSON.parse(readFileSync(this.file, 'utf8')))
-      : initialState();
+    const persisted = this.repository.load();
+    this.state = persisted === undefined ? initialState() : decodeState(persisted);
     for (const c of this.state.conversations)
       for (const m of c.messages)
         if (m.status === 'streaming') {
@@ -41,15 +39,10 @@ export class Storage {
   }
   replace(next: State) {
     const validated = decodeState(next);
-    this.write(validated);
+    this.repository.save(validated);
     this.state = validated;
   }
   save() {
-    this.write(this.state);
-  }
-  private write(state: State) {
-    const tmp = this.file + '.tmp';
-    writeFileSync(tmp, JSON.stringify(state, null, 2), { mode: 0o600 });
-    renameSync(tmp, this.file);
+    this.repository.save(this.state);
   }
 }
