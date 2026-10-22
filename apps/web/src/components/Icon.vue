@@ -46,6 +46,8 @@ import {
   RotateCcw,
   Sparkles,
   Info,
+  Library,
+  Star,
 } from 'lucide-vue-next';
 const props = defineProps<{ name: string; size?: number }>();
 const icons: Record<string, any> = {
@@ -94,6 +96,8 @@ const icons: Record<string, any> = {
   retry: RotateCcw,
   sparkles: Sparkles,
   info: Info,
+  library: Library,
+  star: Star,
 };
 const icon = computed(() => icons[props.name] ?? MessageSquare);
 </script>

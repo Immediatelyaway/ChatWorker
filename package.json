@@ -34,6 +34,7 @@
     "concurrently": "^9.2.1",
     "electron": "^44.9.0",
     "electron-builder": "^26.15.3",
+    "jszip": "^3.10.2",
     "prettier": "^3.9.10",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",

@@ -12,6 +12,10 @@ import { parseSSE } from '../../../../packages/providers';
 import { STATE_VERSION } from '../../../../packages/contracts/versions';
 export const ui = reactive({
   page: 'chat',
+  spaceFilter: 'all',
+  useLibrary: false,
+  libraryDocumentIds: [] as string[],
+  libraryLabel: '',
   activeId: '',
   projectId: '',
   mode: 'work' as 'chat' | 'work',
@@ -70,6 +74,9 @@ export async function load() {
   }
 }
 export function openConversation(c: Conversation) {
+  ui.useLibrary = false;
+  ui.libraryDocumentIds = [];
+  ui.libraryLabel = '';
   ui.activeId = c.id;
   ui.mode = c.mode;
   ui.projectId = c.projectId ?? '';
@@ -78,6 +85,9 @@ export function openConversation(c: Conversation) {
   ui.error = '';
 }
 export function newChat() {
+  ui.useLibrary = false;
+  ui.libraryDocumentIds = [];
+  ui.libraryLabel = '';
   ui.activeId = '';
   ui.page = 'chat';
   ui.error = '';
@@ -149,6 +159,8 @@ export async function send(
     id: provider.value!.id,
     name: provider.value!.name,
     model: state.preferences.model,
+    useLibrary: ui.useLibrary,
+    libraryDocumentIds: ui.libraryDocumentIds.length ? [...ui.libraryDocumentIds] : undefined,
   };
   ui.preparing = true;
   try {
@@ -171,6 +183,8 @@ export async function send(
         providerId: selected.id,
         model: selected.model,
         reuseLastUser,
+        useLibrary: selected.useLibrary,
+        libraryDocumentIds: selected.libraryDocumentIds,
       }),
     });
     if (!response.ok) {
@@ -202,6 +216,7 @@ export async function send(
     let finished = false;
     for await (const raw of parseSSE(response.body!)) {
       const event = JSON.parse(raw) as StreamEvent;
+      if (event.type === 'citations') answer.execution!.citations = event.citations;
       if (event.type === 'delta') answer.content += event.text;
       if (event.type === 'reasoning')
         answer.execution!.reasoning = (answer.execution!.reasoning ?? '') + event.text;

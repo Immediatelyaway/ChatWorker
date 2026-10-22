@@ -61,6 +61,31 @@ const settings = [
         <Icon :name="s.icon" />{{ s.name }}
       </button></template
     >
+    <template v-else-if="ui.page === 'spaces'"
+      ><button class="sidebar-action back" @click="ui.page = 'chat'">
+        <Icon name="left" />返回对话
+      </button>
+      <p class="section-label">我的空间</p>
+      <button
+        v-for="item in [
+          { id: 'all', name: '全部资料', icon: 'library' },
+          { id: 'uploads', name: '上传的资料', icon: 'file' },
+          { id: 'history', name: '对话中的资料', icon: 'chat' },
+          { id: 'favorites', name: '收藏', icon: 'star' },
+          { id: 'trash', name: '回收站', icon: 'trash' },
+        ]"
+        :key="item.id"
+        class="sidebar-action"
+        :class="{ selected: ui.spaceFilter === item.id }"
+        @click="ui.spaceFilter = item.id"
+      >
+        <Icon :name="item.icon" />{{ item.name }}
+      </button>
+      <div class="spaces-sidebar-note">
+        <Icon name="sparkles" :size="20" /><strong>让资料参与思考</strong>
+        <p>整理文档，连接已有对话。提问时按需参考，答案有迹可循。</p>
+      </div></template
+    >
     <template v-else>
       <button class="sidebar-action new-chat" @click="newChat">
         <Icon name="edit" />新会话<span class="shortcut">⌘ N</span>

@@ -162,6 +162,28 @@ defineExpose({ fill });
 </script>
 <template>
   <div class="composer-wrap">
+    <div class="library-composer-bar">
+      <button
+        :class="{ active: ui.useLibrary }"
+        :aria-pressed="ui.useLibrary"
+        @click="ui.useLibrary = !ui.useLibrary"
+      >
+        <Icon name="library" :size="15" />参考空间资料<span v-if="ui.useLibrary">
+          · 已开启</span
+        ></button
+      ><span v-if="ui.useLibrary" class="library-scope truncate"
+        >{{ ui.libraryLabel || '全部已启用资料' }} · 相关片段将发送给当前模型</span
+      ><button
+        v-if="ui.libraryDocumentIds.length"
+        class="text-button"
+        @click="
+          ui.libraryDocumentIds = [];
+          ui.libraryLabel = '';
+        "
+      >
+        改用全部
+      </button>
+    </div>
     <div class="composer">
       <div v-if="attachments.length" class="attachment-chips">
         <span v-for="(a, i) in attachments" :key="i" class="attachment-chip"

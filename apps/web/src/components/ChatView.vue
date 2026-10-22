@@ -3,6 +3,8 @@ import { ref, watch, nextTick } from 'vue';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import Icon from './Icon.vue';
+import CitationList from './CitationList.vue';
+import { saveReply } from '../composables/library';
 import Composer from './Composer.vue';
 import ExecutionDetails from './ExecutionDetails.vue';
 import { ui, current, notify, forkConversation, send } from '../composables/workspace';
@@ -107,7 +109,19 @@ watch(
                       : '本次生成未完成，可以在新分支中重新生成。'
                 }}
               </p>
+              <CitationList
+                v-if="m.execution?.citations?.length"
+                :citations="m.execution.citations"
+              />
               <div v-if="m.status !== 'streaming'" class="message-actions">
+                <button
+                  v-if="m.content"
+                  class="text-button"
+                  :disabled="ui.unsavedReplies.has(m.id)"
+                  @click="saveReply(m.id)"
+                >
+                  <Icon name="library" :size="15" />保存到空间
+                </button>
                 <button
                   v-if="m.content"
                   class="icon-button copy-button"

@@ -83,7 +83,9 @@ const icons: Record<string, string> = {
           >其中思考 {{ execution.usage.reasoningTokens.toLocaleString() }} tokens</span
         >
       </div>
-      <p class="trace-footnote">记录实际请求阶段；当前尚未启用文件工具与联网搜索。</p>
+      <p class="trace-footnote">
+        记录实际请求阶段；空间检索使用本机资料，尚未启用文件工具与联网搜索。
+      </p>
     </div>
   </details>
 </template>

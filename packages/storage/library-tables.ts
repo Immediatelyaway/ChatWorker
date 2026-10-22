@@ -92,9 +92,12 @@ export function executeLibrary(db: DatabaseSync, query: LibraryQuery): unknown {
         Number(usage.bytes) + original.length > LIBRARY_LIMITS.totalBytes ||
         Number(usage.characters) + query.text.length > 10_000_000
       )
-        throw Object.assign(new Error('空间容量已达上限，请先保管资料并整理资料库'), {
-          code: 'LIBRARY_LIMIT',
-        });
+        throw Object.assign(
+          new Error('空间已达到本版本容量上限（含回收站资料），暂时无法新增资料'),
+          {
+            code: 'LIBRARY_LIMIT',
+          },
+        );
       id = randomUUID();
       const now = new Date().toISOString();
       db.prepare(

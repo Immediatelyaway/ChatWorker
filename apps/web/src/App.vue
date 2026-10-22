@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, watch, ref } from 'vue';
 import Icon from './components/Icon.vue';
 import Sidebar from './components/Sidebar.vue';
 import ChatView from './components/ChatView.vue';
+import SpacesView from './components/SpacesView.vue';
 import SettingsView from './components/SettingsView.vue';
 import DetailPanel from './components/DetailPanel.vue';
 import {
@@ -92,6 +93,14 @@ function settings() {
         <Icon name="home" :size="21" /></button
       ><button
         class="rail-button"
+        :class="{ active: ui.page === 'spaces' }"
+        title="空间"
+        aria-label="空间"
+        @click="ui.page = 'spaces'"
+      >
+        <Icon name="library" :size="21" /></button
+      ><button
+        class="rail-button"
         title="搜索会话"
         aria-label="搜索会话"
         @click="ui.searchOpen = true"
@@ -142,6 +151,8 @@ function settings() {
             ><Icon name="right" :size="13" /><span class="top-title truncate">{{
               current?.title ?? '新会话'
             }}</span></template
+          ><span v-else-if="ui.page === 'spaces'" class="breadcrumb"
+            >空间 <span class="breadcrumb-slash">/</span> 我的资料</span
           ><span v-else class="breadcrumb"
             >设置 <span class="breadcrumb-slash">/</span> 偏好与连接</span
           >
@@ -192,6 +203,13 @@ function settings() {
                 <Icon name="search" :size="16" />搜索会话</button
               ><button
                 @click="
+                  ui.page = 'spaces';
+                  menu = false;
+                "
+              >
+                <Icon name="library" :size="16" />空间</button
+              ><button
+                @click="
                   settings();
                   menu = false;
                 "
@@ -228,9 +246,9 @@ function settings() {
         </div>
       </header>
       <div class="main-content">
-        <SettingsView v-if="ui.page === 'settings'" /><ChatView v-else /><DetailPanel
-          v-if="ui.details && ui.page === 'chat'"
-        />
+        <SpacesView v-if="ui.page === 'spaces'" /><SettingsView
+          v-else-if="ui.page === 'settings'"
+        /><ChatView v-else /><DetailPanel v-if="ui.details && ui.page === 'chat'" />
       </div>
     </main>
     <div v-if="ui.profileOpen" class="popover profile-menu">
