@@ -9,6 +9,9 @@ import {
   openConversation,
   createProject,
 } from '../composables/workspace';
+function closeMobile() {
+  ui.mobileSidebar = false;
+}
 const projectInput = ref(false),
   name = ref('');
 const chats = computed(() =>
@@ -33,15 +36,28 @@ const settings = [
 ];
 </script>
 <template>
-  <aside class="sidebar" :class="{ hidden: !ui.sidebar }">
+  <aside
+    v-dialog="ui.mobileSidebar ? closeMobile : undefined"
+    :role="ui.mobileSidebar ? 'dialog' : undefined"
+    :aria-modal="ui.mobileSidebar || undefined"
+    aria-label="侧栏导航"
+    class="sidebar"
+    :class="{ hidden: !ui.sidebar, 'mobile-open': ui.mobileSidebar }"
+  >
     <div class="sidebar-heading">
-      <button class="brand" @click="newChat">
-        <span class="brand-symbol">W<span></span></span>ChatWorker</button
+      <button
+        class="brand"
+        @click="
+          newChat();
+          ui.mobileSidebar = false;
+        "
+      >
+        {{ ui.page === 'spaces' ? '空间' : ui.page === 'settings' ? '设置' : 'ChatWorker' }}</button
       ><button
         class="icon-button"
         title="收起侧栏"
         aria-label="收起侧栏"
-        @click="ui.sidebar = false"
+        @click="ui.mobileSidebar ? (ui.mobileSidebar = false) : (ui.sidebar = false)"
       >
         <Icon name="sidebar" :size="18" />
       </button>
@@ -55,8 +71,12 @@ const settings = [
         v-for="s in settings"
         :key="s.id"
         class="sidebar-action"
+        :aria-current="ui.setting === s.id ? 'page' : undefined"
         :class="{ selected: ui.setting === s.id }"
-        @click="ui.setting = s.id"
+        @click="
+          ui.setting = s.id;
+          ui.mobileSidebar = false;
+        "
       >
         <Icon :name="s.icon" />{{ s.name }}
       </button></template
@@ -77,7 +97,10 @@ const settings = [
         :key="item.id"
         class="sidebar-action"
         :class="{ selected: ui.spaceFilter === item.id }"
-        @click="ui.spaceFilter = item.id"
+        @click="
+          ui.spaceFilter = item.id;
+          ui.mobileSidebar = false;
+        "
       >
         <Icon :name="item.icon" />{{ item.name }}
       </button>
@@ -87,7 +110,13 @@ const settings = [
       </div></template
     >
     <template v-else>
-      <button class="sidebar-action new-chat" @click="newChat">
+      <button
+        class="sidebar-action new-chat"
+        @click="
+          newChat();
+          ui.mobileSidebar = false;
+        "
+      >
         <Icon name="edit" />新会话<span class="shortcut">⌘ N</span>
       </button>
       <button class="sidebar-action" @click="ui.searchOpen = true">
@@ -160,8 +189,12 @@ const settings = [
           v-for="c in chats"
           :key="c.id"
           class="chat-row"
+          :title="c.title"
           :class="{ selected: current?.id === c.id }"
-          @click="openConversation(c)"
+          @click="
+            openConversation(c);
+            ui.mobileSidebar = false;
+          "
         >
           <span class="chat-title"
             >{{ c.title }}<span v-if="ui.busyId === c.id" class="live-dot"></span></span

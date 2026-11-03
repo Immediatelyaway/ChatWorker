@@ -41,6 +41,12 @@ function theme() {
       : state.preferences.theme;
 }
 watch(() => state.preferences.theme, theme);
+watch(
+  () => ui.searchOpen,
+  (open) => {
+    if (open) ui.mobileSidebar = false;
+  },
+);
 function keys(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key === ',') {
     e.preventDefault();
@@ -59,17 +65,41 @@ function keys(e: KeyboardEvent) {
     ui.profileOpen = false;
     menu.value = false;
     rename.value = false;
+    ui.mobileSidebar = false;
   }
 }
+function closeWideNavigation() {
+  if (window.innerWidth > 900) ui.mobileSidebar = false;
+}
+function outsideMenus(event: PointerEvent) {
+  const target = event.target as Element;
+  if (!target.closest('.menu-anchor')) menu.value = false;
+  if (!target.closest('.profile-menu, .avatar')) ui.profileOpen = false;
+}
+watch(
+  [() => ui.page, () => ui.setting, () => ui.activeId, () => ui.projectId, () => ui.spaceFilter],
+  () => {
+    ui.mobileSidebar = false;
+    menu.value = false;
+    ui.profileOpen = false;
+  },
+);
 onMounted(() => {
+  document.addEventListener('pointerdown', outsideMenus);
+  window.addEventListener('resize', closeWideNavigation);
   void load();
   window.addEventListener('keydown', keys);
   scheme.addEventListener('change', theme);
 });
 onUnmounted(() => {
+  document.removeEventListener('pointerdown', outsideMenus);
+  window.removeEventListener('resize', closeWideNavigation);
   window.removeEventListener('keydown', keys);
   scheme.removeEventListener('change', theme);
 });
+function closeSearch() {
+  ui.searchOpen = false;
+}
 function settings() {
   ui.page = 'settings';
   ui.setting = 'providers';
@@ -135,10 +165,24 @@ function settings() {
         K
       </button>
     </nav>
+    <button
+      v-if="ui.mobileSidebar"
+      class="sidebar-backdrop"
+      aria-label="关闭导航"
+      @click="ui.mobileSidebar = false"
+    ></button>
     <Sidebar />
     <main class="main-panel">
       <header class="topbar">
         <div class="topbar-left">
+          <button
+            class="icon-button mobile-navigation"
+            aria-label="打开导航"
+            :aria-expanded="ui.mobileSidebar"
+            @click="ui.mobileSidebar = !ui.mobileSidebar"
+          >
+            <Icon name="sidebar" />
+          </button>
           <button
             v-if="!ui.sidebar"
             class="icon-button"
@@ -158,9 +202,17 @@ function settings() {
           >
         </div>
         <div v-if="ui.page === 'chat' && !current?.messages.length" class="mode-switch">
-          <button :class="{ active: ui.mode === 'chat' }" @click="ui.mode = 'chat'">
+          <button
+            :aria-pressed="ui.mode === 'chat'"
+            :class="{ active: ui.mode === 'chat' }"
+            @click="ui.mode = 'chat'"
+          >
             <Icon name="chat" :size="14" />聊天</button
-          ><button :class="{ active: ui.mode === 'work' }" @click="ui.mode = 'work'">
+          ><button
+            :aria-pressed="ui.mode === 'work'"
+            :class="{ active: ui.mode === 'work' }"
+            @click="ui.mode = 'work'"
+          >
             <Icon name="checks" :size="14" />工作
           </button>
         </div>
@@ -180,8 +232,8 @@ function settings() {
           <div class="menu-anchor">
             <button
               class="icon-button"
-              aria-label="会话菜单"
-              title="会话菜单"
+              aria-label="工作空间菜单"
+              title="工作空间菜单"
               @click="menu = !menu"
             >
               <Icon name="more" />
@@ -279,7 +331,13 @@ function settings() {
       <Icon name="check" :size="17" />{{ ui.toast }}
     </div>
     <div v-if="ui.searchOpen" class="modal-overlay" @click.self="ui.searchOpen = false">
-      <div class="search-dialog" role="dialog" aria-modal="true" aria-label="搜索会话">
+      <div
+        class="search-dialog"
+        v-dialog="closeSearch"
+        role="dialog"
+        aria-modal="true"
+        aria-label="搜索会话"
+      >
         <div class="search-input">
           <Icon name="search" /><input
             v-model="ui.search"
@@ -312,6 +370,7 @@ function settings() {
         role="dialog"
         aria-modal="true"
         aria-label="重命名会话"
+        v-dialog="() => (rename = false)"
         @submit.prevent="
           current && updateConversation(current.id, { title });
           rename = false;

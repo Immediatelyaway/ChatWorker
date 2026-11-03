@@ -206,7 +206,6 @@ const date = (value: string) =>
   >
     <header class="spaces-heading">
       <div>
-        <span class="spaces-eyebrow">YOUR KNOWLEDGE, CONNECTED</span>
         <h1>{{ titles[ui.spaceFilter] || '全部资料' }}</h1>
         <p>把资料留在这里，让每一次对话有所依据。</p>
       </div>
@@ -352,6 +351,7 @@ const date = (value: string) =>
         role="dialog"
         aria-modal="true"
         aria-label="资料预览"
+        v-dialog="close"
         @keydown.esc="close"
       >
         <header>
@@ -428,6 +428,11 @@ const date = (value: string) =>
         role="dialog"
         aria-modal="true"
         aria-label="新建空间笔记"
+        v-dialog="
+          () => {
+            if (!saving) noteOpen = false;
+          }
+        "
         @submit.prevent="saveNote"
       >
         <h2>把想法留在空间</h2>

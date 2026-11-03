@@ -37,6 +37,7 @@ watch(selected, async (value) => {
         role="dialog"
         aria-modal="true"
         aria-label="引用原文"
+        v-dialog="() => (selected = undefined)"
         @keydown.esc="selected = undefined"
       >
         <header>

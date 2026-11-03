@@ -41,7 +41,7 @@ const statusText = computed(
   () =>
     ({
       loading: '正在读取草稿…',
-      saved: '草稿已保存到本机，重启后可恢复',
+      saved: '草稿已保存',
       dirty: '草稿等待保存…',
       saving: '正在保存草稿…',
       offline: '尚未保存到资料库，请保留当前窗口或下载副本',
@@ -248,7 +248,11 @@ defineExpose({ fill });
         </button>
       </div>
     </div>
-    <div class="draft-status" role="status">
+    <div
+      v-if="text || attachments.length || entry.status !== 'saved'"
+      class="draft-status"
+      role="status"
+    >
       <span>{{ statusText }}</span>
       <button
         v-if="text || attachments.length"

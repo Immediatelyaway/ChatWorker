@@ -62,9 +62,7 @@ watch(
 <template>
   <section class="chat-view" :class="{ welcome: !current?.messages.length }">
     <div v-if="!current?.messages.length" class="welcome-content">
-      <div class="welcome-kicker"><span class="mini-mark">✳</span> 一处空间，无限可能</div>
-      <h1>{{ ui.mode === 'work' ? '我们一起，做点什么？' : '今天，想聊些什么？' }}</h1>
-      <p class="welcome-subtitle">把想法带到这里，让下一步更清晰。</p>
+      <h1>{{ ui.mode === 'work' ? '我们要做什么？' : '今天想聊些什么？' }}</h1>
       <Composer ref="composer" />
       <div class="suggestion-grid">
         <button v-for="s in suggestions" :key="s.title" @click="composer?.fill(s.prompt)">

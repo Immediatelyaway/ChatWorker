@@ -17,6 +17,12 @@ import {
 } from '../composables/workspace';
 import { deepseekModels } from '../../../../packages/shared/model-catalog';
 import type { Protocol } from '../../../../packages/shared/types';
+const scroll = ref<HTMLElement>();
+watch(
+  () => ui.setting,
+  () => scroll.value?.scrollTo({ top: 0 }),
+  { flush: 'post' },
+);
 const selected = ref(
     state.preferences.providerId === 'demo' ? 'openai' : state.preferences.providerId,
   ),
@@ -112,9 +118,19 @@ const titles: Record<string, string> = {
 };
 </script>
 <template>
-  <section class="settings-scroll">
+  <section ref="scroll" class="settings-scroll">
     <div class="settings-content">
-      <div class="eyebrow">让工作空间适合你</div>
+      <nav class="settings-mobile-tabs" aria-label="设置分类">
+        <button
+          v-for="(label, id) in titles"
+          :key="id"
+          :aria-current="ui.setting === id ? 'page' : undefined"
+          :class="{ active: ui.setting === id }"
+          @click="ui.setting = id"
+        >
+          {{ label }}
+        </button>
+      </nav>
       <h1>{{ titles[ui.setting] }}</h1>
       <template v-if="ui.setting === 'providers'"
         ><p class="settings-description">连接你喜欢的模型。一个工作空间，多种思考方式。</p>
@@ -347,6 +363,7 @@ const titles: Record<string, string> = {
             ] as const"
             :key="t.id"
             :class="{ active: state.preferences.theme === t.id }"
+            :aria-pressed="state.preferences.theme === t.id"
             @click="preference({ theme: t.id })"
           >
             <div class="theme-preview" :class="t.id">
@@ -419,7 +436,13 @@ const titles: Record<string, string> = {
     </div>
   </section>
   <div v-if="deleteId" class="modal-overlay" @click.self="deleteId = ''">
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+    <div
+      class="dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-title"
+      v-dialog="() => (deleteId = '')"
+    >
       <h2 id="delete-title">删除这个会话？</h2>
       <p>消息和附件内容将从本机记录中删除，无法撤销。</p>
       <div class="form-actions">

@@ -100,6 +100,11 @@ async function remove() {
       role="dialog"
       aria-modal="true"
       aria-labelledby="project-title"
+      v-dialog="
+        () => {
+          if (!busy) editing = false;
+        }
+      "
       @submit.prevent="save"
     >
       <h2 id="project-title">{{ editingId ? '编辑项目' : '创建项目' }}</h2>
@@ -126,7 +131,17 @@ async function remove() {
     </form>
   </div>
   <div v-if="deleting" class="modal-overlay" @click.self="!busy && (deleting = undefined)">
-    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="project-delete-title">
+    <div
+      class="dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="project-delete-title"
+      v-dialog="
+        () => {
+          if (!busy) deleting = undefined;
+        }
+      "
+    >
       <h2 id="project-delete-title">删除项目「{{ deleting.name }}」？</h2>
       <p>项目分组及说明会被删除。{{ count }} 个会话（含归档）、消息和附件将保留为独立会话。</p>
       <p v-if="error" role="alert" class="danger">{{ error }}</p>

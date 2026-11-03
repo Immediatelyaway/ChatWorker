@@ -72,7 +72,9 @@ async function restore() {
     <div class="setting-row">
       <div>
         <strong>导出完整会话备份</strong>
-        <p>包含项目、消息和文本附件。备份为明文，不包含模型配置或 API Key。</p>
+        <p>
+          包含项目、消息、文本附件与引用快照。备份为明文，不含模型配置、API Key、草稿和空间原文件。
+        </p>
       </div>
       <button class="secondary-button" :disabled="busy || !!ui.busyId" @click="download">
         导出备份

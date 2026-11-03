@@ -12,6 +12,7 @@ import { parseSSE } from '../../../../packages/providers';
 import { STATE_VERSION } from '../../../../packages/contracts/versions';
 export const ui = reactive({
   page: 'chat',
+  mobileSidebar: false,
   spaceFilter: 'all',
   useLibrary: false,
   libraryDocumentIds: [] as string[],
